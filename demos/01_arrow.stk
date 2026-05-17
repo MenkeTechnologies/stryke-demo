@@ -1,0 +1,50 @@
+#!/usr/bin/env stryke
+# demos/01_arrow.stk — stryke-arrow: in-process Apache Arrow IPC + CSV/Parquet/Feather/JSON I/O.
+#
+# Run:  s demos/01_arrow.stk
+# Deps: none — Arrow runs purely in-process via Rust arrow-rs.
+
+use Arrow
+use Arrow::CSV
+use Arrow::Parquet
+use Arrow::Feather
+use Arrow::JSON
+use Arrow::IPC
+
+p "── stryke-arrow demo ──"
+p Arrow::version()
+
+# Build a small RecordBatch from columnar input.
+my $batch = Arrow::batch(
+    id    => [1, 2, 3, 4, 5],
+    name  => ["alice", "bob", "charlie", "dana", "eve"],
+    score => [98.5, 87.0, 91.2, 76.8, 100.0],
+)
+p "rows=$batch->{num_rows} cols=$batch->{num_cols}"
+
+my $tmp = "/tmp/stryke-demo-arrow"
+mkdir $tmp unless -d $tmp
+
+# CSV round-trip.
+Arrow::CSV::write("$tmp/people.csv", $batch)
+my $back = Arrow::CSV::read("$tmp/people.csv")
+p "csv round-trip rows=$back->{num_rows}"
+
+# Parquet (snappy by default).
+Arrow::Parquet::write("$tmp/people.parquet", $batch)
+my $pq = Arrow::Parquet::read("$tmp/people.parquet")
+p "parquet round-trip rows=$pq->{num_rows}"
+
+# Feather (arrow IPC file format).
+Arrow::Feather::write("$tmp/people.feather", $batch)
+p "feather written"
+
+# JSON line-delimited.
+Arrow::JSON::write("$tmp/people.ndjson", $batch)
+p "ndjson written"
+
+# Schema introspection.
+p "schema:"
+for my $f (@{$batch->{schema}}) {
+    p "  $f->{name}: $f->{type}"
+}

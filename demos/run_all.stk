@@ -1,0 +1,47 @@
+#!/usr/bin/env stryke
+# demos/run_all.stk — run every demo whose backing service is reachable.
+# Skips the rest cleanly so you can try the demos with whatever you have running.
+
+use Arrow
+use Spark
+use Parquet
+use DuckDB
+use MySQL
+use Postgres
+use Kafka
+use Redis
+use Mongo
+use AWS::STS
+use Grpc
+
+sub run ($label, $reachable, $path) {
+    unless ($reachable) {
+        p "── $label: SKIP (service not reachable)"
+        return
+    }
+    p ""
+    p "════════ $label ════════"
+    system("s", $path)
+}
+
+# Always-on (no service): arrow, parquet, duckdb, spark embedded.
+run "01 arrow",    1, "demos/01_arrow.stk"
+run "09 parquet",  1, "demos/09_parquet.stk"
+run "10 duckdb",   DuckDB::ping(), "demos/10_duckdb.stk"
+run "04 spark",    Spark::ping(),  "demos/04_spark.stk"
+
+# Service-backed.
+run "02 mysql",    MySQL::ping(),     "demos/02_mysql.stk"
+run "03 postgres", Postgres::ping(),  "demos/03_postgres.stk"
+run "07 kafka",    Kafka::ping(),     "demos/07_kafka.stk"
+run "11 redis",    Redis::ping(),     "demos/11_redis.stk"
+run "12 mongo",    Mongo::ping(),     "demos/12_mongo.stk"
+
+# Cloud / reflection — ping is its own kind of check.
+my $aws_ok = eval { AWS::STS::caller(); 1 } ? 1 : 0
+run "05 aws",      $aws_ok, "demos/05_aws.stk"
+
+# gcp + grpc need explicit args — leave to the user.
+p ""
+p "── 06 gcp:  pass `s demos/06_gcp.stk gs://bucket [sub]` manually"
+p "── 08 grpc: pass `s demos/08_grpc.stk host:port`         manually"

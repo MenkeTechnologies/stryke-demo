@@ -1,0 +1,40 @@
+[package]
+name = "stryke-demo"
+version = "0.1.0"
+description = "Live demos of every stryke-* package: arrow, mysql, postgres, spark, aws, gcp, kafka, grpc, parquet, duckdb, redis, mongo."
+authors = ["MenkeTechnologies"]
+license = "MIT"
+repository = "https://github.com/MenkeTechnologies/stryke-demo"
+edition = "2026"
+
+# All twelve stryke-* packages pulled from GitHub. Pinned to the main
+# branch for now — flip to `tag = "vX.Y.Z"` once releases start cutting.
+[deps]
+arrow    = { git = "https://github.com/MenkeTechnologies/stryke-arrow",    branch = "main" }
+mysql    = { git = "https://github.com/MenkeTechnologies/stryke-mysql",    branch = "main" }
+postgres = { git = "https://github.com/MenkeTechnologies/stryke-postgres", branch = "main" }
+spark    = { git = "https://github.com/MenkeTechnologies/stryke-spark",    branch = "main" }
+aws      = { git = "https://github.com/MenkeTechnologies/stryke-aws",      branch = "main" }
+gcp      = { git = "https://github.com/MenkeTechnologies/stryke-gcp",      branch = "main" }
+kafka    = { git = "https://github.com/MenkeTechnologies/stryke-kafka",    branch = "main" }
+grpc     = { git = "https://github.com/MenkeTechnologies/stryke-grpc",     branch = "main" }
+parquet  = { git = "https://github.com/MenkeTechnologies/stryke-parquet",  branch = "main" }
+duckdb   = { git = "https://github.com/MenkeTechnologies/stryke-duckdb",   branch = "main" }
+redis    = { git = "https://github.com/MenkeTechnologies/stryke-redis",    branch = "main" }
+mongo    = { git = "https://github.com/MenkeTechnologies/stryke-mongo",    branch = "main" }
+
+[scripts]
+install      = "s install"
+demo-arrow   = "s demos/01_arrow.stk"
+demo-mysql   = "s demos/02_mysql.stk"
+demo-postgres = "s demos/03_postgres.stk"
+demo-spark   = "s demos/04_spark.stk"
+demo-aws     = "s demos/05_aws.stk"
+demo-gcp     = "s demos/06_gcp.stk"
+demo-kafka   = "s demos/07_kafka.stk"
+demo-grpc    = "s demos/08_grpc.stk"
+demo-parquet = "s demos/09_parquet.stk"
+demo-duckdb  = "s demos/10_duckdb.stk"
+demo-redis   = "s demos/11_redis.stk"
+demo-mongo   = "s demos/12_mongo.stk"
+all          = "s demos/run_all.stk"

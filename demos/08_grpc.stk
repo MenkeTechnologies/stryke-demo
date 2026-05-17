@@ -1,0 +1,28 @@
+#!/usr/bin/env stryke
+# demos/08_grpc.stk — stryke-grpc: reflection + unary + streaming calls.
+#
+# Run:  s demos/08_grpc.stk localhost:50051
+# Live: docker run --rm -p50051:50051 fullstorydev/grpcurl-test-server:latest
+#       (or any reflection-enabled gRPC server)
+
+use Grpc
+
+my $target = $ARGV[0] // "localhost:50051"
+my %opts   = (target => $target, plaintext => 1)
+
+p "── stryke-grpc demo ──"
+p Grpc::version()
+
+# Reflection: list services on the server.
+my @services = Grpc::list(%opts)
+p "services on $target:"
+for my $s (@services) {
+    p "  $s->{service}"
+}
+
+# Describe the first one if any.
+if (@services) {
+    my $name = $services[0]->{service}
+    my $d = Grpc::describe($name, %opts)
+    p "describe $name: " . to_json($d)
+}

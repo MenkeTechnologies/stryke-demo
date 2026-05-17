@@ -1,0 +1,40 @@
+#!/usr/bin/env stryke
+# demos/11_redis.stk — stryke-redis: KV + lists + hashes + sets + sorted sets + pubsub.
+#
+# Run:  REDIS_URL=redis://localhost s demos/11_redis.stk
+# Live: docker run --rm -p6379:6379 redis:7
+
+use Redis
+
+p "── stryke-redis demo ──"
+p Redis::version()
+exit 1 unless Redis::ping()
+
+# KV.
+Redis::set("greeting", "hello stryke")
+p "get: " . Redis::get("greeting")
+
+Redis::mset({ a => 1, b => 2, c => 3 })
+p "mget: " . join(",", Redis::mget(["a","b","c"]))
+
+p "incr: " . Redis::incr("counter")
+p "incr by 10: " . Redis::incr("counter", by => 10)
+
+# List.
+Redis::lpush "events", ["a","b","c","d"]
+p "lrange: " . join(",", Redis::lrange("events", 0, -1))
+
+# Hash.
+Redis::hmset "user:42", { name => "alice", age => 30, role => "admin" }
+my $u = Redis::hgetall "user:42"
+p "hash: name=$u->{name} age=$u->{age} role=$u->{role}"
+
+# Sorted set.
+Redis::zadd "leaderboard", { alice => 100, bob => 200, charlie => 150 }
+my @lb = Redis::zrange "leaderboard", 0, -1, withscores => 1, rev => 1
+p "leaderboard (top→bottom):"
+for my $e (@lb) {
+    p "  $e->{member}: $e->{score}"
+}
+
+Redis::del ["greeting","a","b","c","counter","events","user:42","leaderboard"]

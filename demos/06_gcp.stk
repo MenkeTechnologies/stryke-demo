@@ -1,0 +1,52 @@
+#!/usr/bin/env stryke
+# demos/06_gcp.stk — stryke-gcp: GCS + Pub/Sub.
+#
+# Run:  s demos/06_gcp.stk gs://my-bucket   projects/my-project/subscriptions/my-sub
+#
+# Needs real GCP creds (Application Default Credentials). No local emulator yet —
+# the helper drives the real APIs.
+#   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+#   # or `gcloud auth application-default login`
+
+use GCP
+use GCP::Storage
+use GCP::PubSub
+
+my $bucket = $ARGV[0]
+my $sub    = $ARGV[1]
+
+p "── stryke-gcp demo ──"
+p GCP::version()
+
+unless (defined $bucket) {
+    p "skip: pass a gs://bucket URI as arg 1 to exercise Storage"
+    exit 0
+}
+
+# Storage round-trip.
+my $uri  = "$bucket/stryke-demo-$$.txt"
+my $body = "hello stryke at " . time()
+GCP::Storage::put $uri, data => $body
+my $back = GCP::Storage::get($uri)
+p "gcs round-trip: " . ($back eq $body ? "match" : "MISMATCH")
+GCP::Storage::rm $uri
+
+# List a few objects.
+my @items = GCP::Storage::ls $bucket, limit => 5
+p "first ${\ len(@items)} objects in $bucket:"
+for my $o (@items) {
+    p "  $o->{name} (${\ ($o->{size} // 0)} bytes)"
+}
+
+unless (defined $sub) {
+    p "skip: pass a Pub/Sub sub name as arg 2 to exercise PubSub"
+    exit 0
+}
+
+my $n = GCP::PubSub::pump $sub,
+    iterations => 2,
+    max        => 5,
+    callback   => sub ($m) {
+        p "  got $m->{message_id}: $m->{data}"
+    }
+p "pubsub handled $n messages"

@@ -1,0 +1,51 @@
+#!/usr/bin/env stryke
+# demos/09_parquet.stk — stryke-parquet: write, inspect, head, stats, recompress.
+#
+# Run:  s demos/09_parquet.stk
+# Deps: none — pure-Rust parquet via arrow-rs.
+
+use Arrow
+use Arrow::Parquet
+use Parquet
+
+p "── stryke-parquet demo ──"
+p Parquet::version()
+
+my $tmp = "/tmp/stryke-demo-parquet"
+mkdir $tmp unless -d $tmp
+my $path = "$tmp/people.parquet"
+
+# Build a small file with stryke-arrow then poke at it with stryke-parquet.
+my $batch = Arrow::batch(
+    id    => [1..10],
+    name  => ["alice", "bob", "charlie", "dana", "eve",
+              "frank", "grace", "henry", "iris", "jack"],
+    score => [98.5, 87.0, 91.2, 76.8, 100.0,
+              82.5, 95.0, 68.4, 88.9, 79.3],
+)
+Arrow::Parquet::write($path, $batch, compression => "zstd")
+p "wrote $path"
+
+# Metadata-only inspect.
+my $info = Parquet::inspect $path
+p "inspect: rows=$info->{num_rows} groups=$info->{num_row_groups} cols=$info->{num_columns} size=$info->{file_size}"
+
+# Schema dump.
+my $sch = Parquet::schema $path
+p "schema:"
+for my $f (@{ $sch->{fields} }) {
+    p "  $f->{name}: $f->{type}"
+}
+
+# Head 3 rows.
+my @rows = Parquet::head $path, n => 3
+p "head:"
+p "  " . to_json($_) for @rows
+
+# Per-column stats.
+my @stats = Parquet::stats $path
+p "stats:"
+for my $s (@stats) {
+    p "  $s->{name}: nulls=" . ($s->{null_count} // 0) .
+      " min=" . to_json($s->{min}) . " max=" . to_json($s->{max})
+}

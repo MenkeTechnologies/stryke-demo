@@ -1,0 +1,43 @@
+#!/usr/bin/env stryke
+# demos/10_duckdb.stk — stryke-duckdb: embedded analytics DB (in-mem + file).
+#
+# Run:  s demos/10_duckdb.stk
+# Deps: none — duckdb is statically linked into the helper.
+
+use DuckDB
+
+p "── stryke-duckdb demo ──"
+p DuckDB::version()
+
+# In-memory ad-hoc.
+my @r = DuckDB::query "SELECT 1+1 AS two, 'hi' AS s"
+p "trivial: $r[0]->{two} $r[0]->{s}"
+
+# Range tvf.
+@r = DuckDB::query "SELECT n FROM range(5) AS r(n)"
+p "range:   " . join(",", map { $_->{n} } @r)
+
+# Positional bind.
+@r = DuckDB::query "SELECT ?::INT + ?::INT AS sum", bind => [10, 32]
+p "bind:    $r[0]->{sum}"
+
+# query_scalar shortcut.
+my $n = DuckDB::query_scalar "SELECT COUNT(*) FROM range(1000)"
+p "count(range(1000)) = $n"
+
+# Persistent file DB — inline `db => $path` named args (eval+%hash spread bug).
+my $tmpdb = "/tmp/stryke-demo-duckdb-$$.duckdb"
+DuckDB::execute("CREATE TABLE people (id INT, name VARCHAR, score DOUBLE)",  db => $tmpdb)
+DuckDB::execute("INSERT INTO people VALUES (1,'alice',98.5),(2,'bob',87.0),(3,'charlie',91.2)", db => $tmpdb)
+
+my @rows = DuckDB::query("SELECT * FROM people ORDER BY score DESC", db => $tmpdb)
+p "file-db rows:"
+for my $r (@rows) {
+    p "  #$r->{id} $r->{name}: $r->{score}"
+}
+
+my $info = DuckDB::inspect(db => $tmpdb)
+p "inspect: file=$info->{file} size=$info->{file_size}"
+
+unlink $tmpdb if -e $tmpdb
+unlink "$tmpdb.wal" if -e "$tmpdb.wal"

@@ -1,0 +1,37 @@
+#!/usr/bin/env stryke
+# demos/02_mysql.stk — stryke-mysql: query / load / dump against any MySQL 5.7+ or MariaDB.
+#
+# Run:  MYSQL_URI='mysql://root:root@127.0.0.1:3306/test' s demos/02_mysql.stk
+# Live: docker run --rm -p3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=test mysql:8
+
+use MySQL
+
+p "── stryke-mysql demo ──"
+p MySQL::version()
+exit 1 unless MySQL::ping()
+p "connected"
+
+MySQL::execute("DROP TABLE IF EXISTS demo_people")
+MySQL::execute("
+    CREATE TABLE demo_people (
+        id    INT PRIMARY KEY AUTO_INCREMENT,
+        name  VARCHAR(64) NOT NULL,
+        score DOUBLE
+    )
+")
+
+MySQL::execute(
+    "INSERT INTO demo_people (name, score) VALUES (?, ?), (?, ?), (?, ?)",
+    bind => ["alice", 98.5, "bob", 87.0, "charlie", 91.2],
+)
+
+my @rows = MySQL::query("SELECT id, name, score FROM demo_people ORDER BY score DESC")
+p "leaderboard:"
+for my $r (@rows) {
+    p "  #$r->{id} $r->{name}: $r->{score}"
+}
+
+my $total = MySQL::query_scalar("SELECT COUNT(*) FROM demo_people")
+p "count=$total"
+
+MySQL::execute("DROP TABLE demo_people")

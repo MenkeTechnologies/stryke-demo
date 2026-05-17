@@ -1,0 +1,41 @@
+#!/usr/bin/env stryke
+# demos/05_aws.stk — stryke-aws: S3 + DynamoDB + STS round-trip via LocalStack.
+#
+# Run:  s demos/05_aws.stk
+# Live: docker run --rm -p4566:4566 localstack/localstack:latest
+#       (or point at real AWS — set AWS_REGION + creds + drop AWS_ENDPOINT_URL)
+
+use AWS
+use AWS::S3
+use AWS::Dynamo
+use AWS::STS
+
+$ENV{AWS_ENDPOINT_URL} //= "http://localhost:4566"
+$ENV{AWS_REGION}       //= "us-east-1"
+$ENV{AWS_ACCESS_KEY_ID} //= "test"
+$ENV{AWS_SECRET_ACCESS_KEY} //= "test"
+
+p "── stryke-aws demo ──"
+p AWS::version()
+
+# STS — who am I.
+my $who = AWS::STS::caller()
+p "caller: $who->{Arn} (account $who->{Account})"
+
+# S3 — bucket + object.
+my $bucket = "stryke-demo-$$"
+AWS::S3::create_bucket($bucket)
+AWS::S3::put("s3://$bucket/hello.txt", body => "hello stryke")
+my $body = AWS::S3::get("s3://$bucket/hello.txt")
+p "s3 get: $body"
+AWS::S3::delete("s3://$bucket/hello.txt")
+AWS::S3::delete_bucket($bucket)
+
+# DynamoDB — create table, put/get/delete.
+my $tbl = "stryke_demo_$$"
+AWS::Dynamo::create_table($tbl, hash_key => "id", hash_type => "S")
+AWS::Dynamo::put($tbl, { id => "k1", name => "alice", score => 1.5 })
+my $row = AWS::Dynamo::get($tbl, { id => "k1" })
+p "ddb get: " . to_json($row)
+AWS::Dynamo::delete($tbl, { id => "k1" })
+AWS::Dynamo::delete_table($tbl)

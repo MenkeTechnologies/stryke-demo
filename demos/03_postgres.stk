@@ -1,0 +1,36 @@
+#!/usr/bin/env stryke
+# demos/03_postgres.stk — stryke-postgres: query / load / dump against Postgres 12+.
+#
+# Run:  POSTGRES_URI='postgres://postgres:postgres@127.0.0.1:5432/postgres' s demos/03_postgres.stk
+# Live: docker run --rm -p5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16
+
+use Postgres
+
+p "── stryke-postgres demo ──"
+p Postgres::version()
+exit 1 unless Postgres::ping()
+p "connected"
+
+Postgres::execute("DROP TABLE IF EXISTS demo_people")
+Postgres::execute("
+    CREATE TABLE demo_people (
+        id    SERIAL PRIMARY KEY,
+        name  TEXT NOT NULL,
+        score DOUBLE PRECISION
+    )
+")
+
+Postgres::execute(
+    "INSERT INTO demo_people (name, score) VALUES (\$1,\$2),(\$3,\$4),(\$5,\$6)",
+    bind => ["alice", 98.5, "bob", 87.0, "charlie", 91.2],
+)
+
+my @rows = Postgres::query("SELECT id, name, score FROM demo_people ORDER BY score DESC")
+p "leaderboard:"
+for my $r (@rows) {
+    p "  #$r->{id} $r->{name}: $r->{score}"
+}
+
+p "count=" . Postgres::query_scalar("SELECT COUNT(*) FROM demo_people")
+
+Postgres::execute("DROP TABLE demo_people")

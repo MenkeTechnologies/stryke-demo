@@ -1,0 +1,32 @@
+#!/usr/bin/env stryke
+# demos/04_spark.stk — stryke-spark: SparkSQL via a local single-jvm session (DataFusion-backed).
+#
+# Run:  s demos/04_spark.stk
+# Deps: none — uses the embedded DataFusion session. Override with SPARK_MASTER=spark://… for a real cluster.
+
+use Spark
+
+p "── stryke-spark demo ──"
+p Spark::version()
+p Spark::ping() ? "alive" : "down"
+
+# Inline SQL — leans on the embedded session.
+my @rows = Spark::query "
+    SELECT name, score, score * 2 AS doubled
+    FROM (VALUES
+        ('alice',   98.5),
+        ('bob',     87.0),
+        ('charlie', 91.2),
+        ('dana',    76.8),
+        ('eve',    100.0)
+    ) AS t(name, score)
+    ORDER BY score DESC
+"
+p "leaderboard:"
+for my $r (@rows) {
+    p "  $r->{name}: $r->{score} → $r->{doubled}"
+}
+
+# Aggregate over a generated range.
+my $sum = Spark::query_scalar("SELECT SUM(id) FROM range(1, 1001)")
+p "sum 1..1000 = $sum"

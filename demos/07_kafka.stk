@@ -1,0 +1,46 @@
+#!/usr/bin/env stryke
+# demos/07_kafka.stk — stryke-kafka: produce + consume + admin + lag.
+#
+# Run:  KAFKA_BROKERS=localhost:9092 s demos/07_kafka.stk
+# Live: docker run --rm -p9092:9092 \
+#         -e KAFKA_CFG_NODE_ID=0 \
+#         -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
+#         -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@127.0.0.1:9093 \
+#         -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+#         -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092 \
+#         -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
+#         -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+#         bitnami/kafka:3.9
+
+use Kafka
+
+p "── stryke-kafka demo ──"
+p Kafka::version()
+exit 1 unless Kafka::ping()
+
+my $topic = "stryke-demo-$$"
+Kafka::create_topic $topic, partitions => 3, replication => 1
+
+# Produce 5 messages.
+for my $i (1..5) {
+    my $r = Kafka::produce $topic, "msg-$i", key => "k$i"
+    p "  produced $r->{topic}/$r->{partition}\@$r->{offset}"
+}
+
+# Consume them back.
+my @msgs = Kafka::consume $topic,
+    group        => "stryke-demo-$$",
+    offset_reset => "earliest",
+    max          => 5,
+    idle_ms      => 5_000
+p "consumed ${\ len(@msgs)} messages"
+for my $m (@msgs) {
+    p "  $m->{partition}.$m->{offset} $m->{key} → $m->{value}"
+}
+
+# Topic metadata.
+my $info = Kafka::describe $topic
+p "describe: $info->{partition_count} partitions"
+
+Kafka::delete_topic $topic
+p "cleaned up"

@@ -1,0 +1,45 @@
+#!/usr/bin/env stryke
+# demos/12_mongo.stk — stryke-mongo: CRUD + aggregate + index admin.
+#
+# Run:  MONGODB_URI=mongodb://localhost:27017 s demos/12_mongo.stk
+# Live: docker run --rm -p27017:27017 mongo:7
+
+use Mongo
+
+p "── stryke-mongo demo ──"
+p Mongo::version()
+exit 1 unless Mongo::ping()
+
+my $t = "demo/people_$$"
+
+Mongo::insert_one $t, { name => "alice",   age => 30, role => "admin" }
+Mongo::insert_many $t, [
+    { name => "bob",     age => 25 },
+    { name => "charlie", age => 35 },
+    { name => "dana",    age => 28 },
+]
+p "count: " . Mongo::count($t)
+
+my @over28 = Mongo::find $t,
+    filter => { age => { '$gt' => 28 } },
+    sort   => { age => -1 }
+p "over-28:"
+for my $u (@over28) {
+    p "  $u->{name} (age $u->{age})"
+}
+
+# Aggregate: bucket by role.
+my @groups = Mongo::aggregate $t, [
+    { '$group' => { _id => '$role', n => { '$sum' => 1 } } }
+]
+p "by role:"
+p "  " . to_json($_) for @groups
+
+# Index admin.
+Mongo::create_index $t, { name => 1 }, unique => 1
+my @ix = Mongo::indexes $t
+p "indexes:"
+p "  $_->{name}" for @ix
+
+Mongo::delete_many $t, {}
+p "cleaned up"
