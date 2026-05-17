@@ -79,8 +79,8 @@ jobs:
               head -1 "$f" | grep -qE '^#!/usr/bin/env stryke' \
                   || { echo "$f: missing shebang"; fail=1; }
               # run_all imports many; the rest must `use` at least one stryke-* module.
-              grep -qE '^use [A-Z][A-Za-z:]+' "$f" \
-                  || { echo "$f: no `use` line"; fail=1; }
+              grep -qE '^use [A-Z][A-Za-z0-9:]+' "$f" \
+                  || { echo "$f: no use line"; fail=1; }
           done
           exit $fail
 
