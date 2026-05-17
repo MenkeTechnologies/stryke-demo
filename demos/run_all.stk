@@ -11,6 +11,8 @@ use Postgres
 use Kafka
 use Redis
 use Mongo
+use K8s
+use Docker
 use AWS::STS
 use Grpc
 
@@ -36,6 +38,8 @@ run "03 postgres", Postgres::ping(),  "demos/03_postgres.stk"
 run "07 kafka",    Kafka::ping(),     "demos/07_kafka.stk"
 run "11 redis",    Redis::ping(),     "demos/11_redis.stk"
 run "12 mongo",    Mongo::ping(),     "demos/12_mongo.stk"
+run "13 k8s",      K8s::ping(),       "demos/13_k8s.stk"
+run "14 docker",   Docker::ping(),    "demos/14_docker.stk"
 
 # Cloud / reflection — ping is its own kind of check.
 my $aws_ok = eval { AWS::STS::caller(); 1 } ? 1 : 0

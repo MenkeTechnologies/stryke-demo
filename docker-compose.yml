@@ -44,3 +44,17 @@ services:
       AWS_DEFAULT_REGION: "us-east-1"
     ports:
       - "4566:4566"
+
+  # Single-node k8s for stryke-k8s. Writes a kubeconfig to ./k3s-data/kubeconfig.yaml.
+  # Use:  KUBECONFIG=$PWD/k3s-data/kubeconfig.yaml make k8s
+  k3s:
+    image: rancher/k3s:latest
+    privileged: true
+    command: server --disable=traefik --tls-san=127.0.0.1 --write-kubeconfig-mode=666
+    environment:
+      K3S_KUBECONFIG_OUTPUT: /output/kubeconfig.yaml
+      K3S_KUBECONFIG_MODE: "666"
+    volumes:
+      - ./k3s-data:/output
+    ports:
+      - "6443:6443"

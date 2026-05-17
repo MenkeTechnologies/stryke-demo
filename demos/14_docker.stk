@@ -1,0 +1,59 @@
+#!/usr/bin/env stryke
+# demos/14_docker.stk — stryke-docker: pull + run + inspect + logs + exec + cleanup.
+#
+# Run:  s demos/14_docker.stk
+# Needs: a reachable Docker daemon (Docker Desktop, dockerd, or DOCKER_HOST).
+
+use Docker
+
+p "── stryke-docker demo ──"
+p "version: " . Docker::version()->{Version}
+exit 1 unless Docker::ping()
+
+my $name = "stryke-demo-$$"
+
+# Pull (drain progress quietly).
+my @pull = Docker::pull "busybox:latest"
+p "pulled busybox (#{len(@pull)} progress events)"
+
+# Run a detached sleeper.
+my $r = Docker::run "busybox:latest",
+    name   => $name,
+    cmd    => ["sh", "-c", "i=0; while true; do echo tick=\$i; i=\$((i+1)); sleep 1; done"],
+    label  => ["stryke.demo=14"],
+    detach => 1
+p "started: $r->{id}"
+
+# Inspect.
+my $info = Docker::inspect $name
+p "state: $info->{State}{Status}  pid: $info->{State}{Pid}"
+
+# ps with filter.
+my @match = Docker::ps all => 1, filters => { label => ["stryke.demo=14"] }
+p "ps (by label): #{len(@match)} container(s)"
+
+# Give the container a few ticks, then exec into it.
+sleep 2
+
+my $exec = Docker::exec $name, ["sh", "-c", "uname -a; echo END"],
+    callback => sub ($stream, $data) {
+        $data =~ s/\s+$//
+        p "  [$stream] $data" if $data ne ""
+    }
+p "exec exit_code=$exec->{exit_code}"
+
+# Tail recent logs.
+p ""
+p "── logs (last 5 lines)"
+my $logs = Docker::logs $name, tail => "5"
+p "  $_" for split /\n/, $logs
+
+# Stats snapshot.
+my $s = Docker::stats $name
+my $mem = $s->{memory_stats}{usage} // 0
+p ""
+p "mem snapshot: $mem bytes"
+
+# Cleanup.
+Docker::rm $name, force => 1
+p "cleaned up $name"

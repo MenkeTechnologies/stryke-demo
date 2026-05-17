@@ -1,7 +1,7 @@
 # stryke-demo
 
 Live demos for every package in the stryke-* family. One `s install`
-pulls all twelve from GitHub; each demo is a standalone `.stk` script.
+pulls all fourteen from GitHub; each demo is a standalone `.stk` script.
 
 Created by MenkeTechnologies.
 
@@ -21,13 +21,15 @@ Created by MenkeTechnologies.
 | 10 | [stryke-duckdb](https://github.com/MenkeTechnologies/stryke-duckdb)     | `demos/10_duckdb.stk`   | none (embedded) |
 | 11 | [stryke-redis](https://github.com/MenkeTechnologies/stryke-redis)       | `demos/11_redis.stk`    | Redis 6+ |
 | 12 | [stryke-mongo](https://github.com/MenkeTechnologies/stryke-mongo)       | `demos/12_mongo.stk`    | MongoDB 5+ |
+| 13 | [stryke-k8s](https://github.com/MenkeTechnologies/stryke-k8s)           | `demos/13_k8s.stk`      | Kubernetes 1.24+ (kind / k3s / cloud) |
+| 14 | [stryke-docker](https://github.com/MenkeTechnologies/stryke-docker)     | `demos/14_docker.stk`   | Docker daemon (Desktop / dockerd / DOCKER_HOST) |
 
 ## Install
 
 ```sh
 git clone https://github.com/MenkeTechnologies/stryke-demo
 cd stryke-demo
-s install         # pulls all 12 packages from GitHub, builds helpers
+s install         # pulls all 14 packages from GitHub, builds helpers
 ```
 
 `s install` resolves every git dep, builds each package's Rust helper
@@ -37,8 +39,8 @@ binary into the global stryke store, and locks the graph in
 ## Spin up all live services
 
 `docker-compose.yml` ships MySQL, Postgres, Redis, Mongo, Kafka (KRaft
-mode), and LocalStack so you can exercise everything but GCP and gRPC
-locally:
+mode), LocalStack, and a single-node k3s cluster so you can exercise
+everything but GCP and gRPC locally:
 
 ```sh
 make up                  # start every container
@@ -59,6 +61,8 @@ make redis
 make mongo
 make kafka
 make aws                 # uses LocalStack at :4566
+make k8s                 # uses kubeconfig from $KUBECONFIG (k3s at ./k3s-data/kubeconfig.yaml)
+make docker              # uses $DOCKER_HOST or the local /var/run/docker.sock
 
 # Need explicit args:
 s demos/06_gcp.stk gs://my-bucket projects/my-proj/subscriptions/my-sub
@@ -85,8 +89,8 @@ run against any subset of services.
 
 ```
 stryke-demo/
-  stryke.toml                # 12 git deps, one per package
-  docker-compose.yml         # MySQL + Postgres + Redis + Mongo + Kafka + LocalStack
+  stryke.toml                # 14 git deps, one per package
+  docker-compose.yml         # MySQL + Postgres + Redis + Mongo + Kafka + LocalStack + k3s
   Makefile
   demos/
     01_arrow.stk             # in-process Arrow RecordBatch + CSV/Parquet/Feather/JSON
@@ -101,14 +105,16 @@ stryke-demo/
     10_duckdb.stk            # in-mem + bind + scalar + persistent file db
     11_redis.stk             # KV + list + hash + sorted set
     12_mongo.stk             # CRUD + aggregate + index admin
+    13_k8s.stk               # discovery + apply + scale + get + cleanup
+    14_docker.stk            # pull + run + inspect + exec + logs + cleanup
     run_all.stk              # ping each service, run only the reachable demos
 ```
 
 ## Updating dep pins
 
-`stryke.toml` pins each package to `branch = "main"`. When the packages
-start cutting `vX.Y.Z` tags, swap to `tag = "vX.Y.Z"` for reproducible
-installs and rerun `s install` to refresh `stryke.lock`.
+`stryke.toml` pins each of the 14 packages to `branch = "main"`. When
+the packages start cutting `vX.Y.Z` tags, swap to `tag = "vX.Y.Z"` for
+reproducible installs and rerun `s install` to refresh `stryke.lock`.
 
 ## License
 

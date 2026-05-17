@@ -1,4 +1,4 @@
-.PHONY: install up down all arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo
+.PHONY: install up down all arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo k8s docker
 
 install:
 	s install
@@ -26,3 +26,5 @@ parquet:  ; s demos/09_parquet.stk
 duckdb:   ; s demos/10_duckdb.stk
 redis:    ; REDIS_URL=redis://localhost:6379 s demos/11_redis.stk
 mongo:    ; MONGODB_URI=mongodb://localhost:27017 s demos/12_mongo.stk
+k8s:      ; s demos/13_k8s.stk
+docker:   ; s demos/14_docker.stk

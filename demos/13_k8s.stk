@@ -1,0 +1,95 @@
+#!/usr/bin/env stryke
+# demos/13_k8s.stk — stryke-k8s: discovery + apply + scale + get + cleanup.
+#
+# Run:  s demos/13_k8s.stk                       (uses $KUBECONFIG)
+#       KUBECONFIG=$PWD/k3s-data/kubeconfig.yaml s demos/13_k8s.stk
+# Live: docker compose up -d k3s                 (or any existing cluster)
+
+use K8s
+
+p "── stryke-k8s demo ──"
+p "context: " . K8s::current_context()
+p "version: " . K8s::version()->{gitVersion}
+exit 1 unless K8s::ping()
+
+my $ns = "stryke-demo-$$"
+
+# Apply a Namespace + ConfigMap + Deployment + Service.
+K8s::apply { apiVersion => "v1", kind => "Namespace", metadata => { name => $ns } }
+p "namespace: $ns"
+
+K8s::apply {
+    apiVersion => "v1",
+    kind       => "ConfigMap",
+    metadata   => { name => "cfg", namespace => $ns },
+    data       => { hello => "from-stryke", owner => "MenkeTechnologies" },
+}
+
+K8s::apply {
+    apiVersion => "apps/v1",
+    kind       => "Deployment",
+    metadata   => { name => "echo", namespace => $ns, labels => { app => "echo" } },
+    spec       => {
+        replicas => 1,
+        selector => { matchLabels => { app => "echo" } },
+        template => {
+            metadata => { labels => { app => "echo" } },
+            spec     => {
+                containers => [{
+                    name  => "main",
+                    image => "hashicorp/http-echo:latest",
+                    args  => ["-text=hello from stryke-k8s"],
+                    ports => [{ containerPort => 5678 }],
+                }],
+            },
+        },
+    },
+}
+
+K8s::apply {
+    apiVersion => "v1",
+    kind       => "Service",
+    metadata   => { name => "echo", namespace => $ns },
+    spec       => {
+        selector => { app => "echo" },
+        ports    => [{ port => 80, targetPort => 5678 }],
+    },
+}
+
+p "applied: configmap/cfg, deployment/echo, service/echo"
+
+# Scale the deployment.
+my $sc = K8s::scale "deploy", "echo", 3, namespace => $ns
+p "scaled echo → $sc->{spec}{replicas}"
+
+# Read back.
+p ""
+p "── configmaps in $ns"
+for my $cm (K8s::get "configmaps", namespace => $ns) {
+    p "  $cm->{metadata}{name}: " . to_json($cm->{data})
+}
+
+p ""
+p "── deployments in $ns"
+for my $d (K8s::get "deploy", namespace => $ns) {
+    my $want = $d->{spec}{replicas}            // 0
+    my $have = $d->{status}{readyReplicas}     // 0
+    p "  $d->{metadata}{name}: $have/$want ready"
+}
+
+p ""
+p "── services in $ns"
+for my $s (K8s::get "svc", namespace => $ns) {
+    p "  $s->{metadata}{name}: clusterIP=$s->{spec}{clusterIP}"
+}
+
+# Discovery sample.
+my @ar = K8s::api_resources()
+p ""
+p "discovered #{len(@ar)} api-resources (e.g. " .
+    join(", ", map { "$_->{group}/$_->{version}/$_->{kind}" }
+                grep { $_->{kind} =~ /^(Pod|Service|Deployment|Namespace)$/ } @ar) . ")"
+
+# Cleanup — namespace delete cascades.
+K8s::delete_resource "namespace", $ns
+p "cleaned up namespace $ns"

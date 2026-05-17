@@ -1,13 +1,13 @@
 [package]
 name = "stryke-demo"
 version = "0.1.0"
-description = "Live demos of every stryke-* package: arrow, mysql, postgres, spark, aws, gcp, kafka, grpc, parquet, duckdb, redis, mongo."
+description = "Live demos of every stryke-* package: arrow, mysql, postgres, spark, aws, gcp, kafka, grpc, parquet, duckdb, redis, mongo, k8s, docker."
 authors = ["MenkeTechnologies"]
 license = "MIT"
 repository = "https://github.com/MenkeTechnologies/stryke-demo"
 edition = "2026"
 
-# All twelve stryke-* packages pulled from GitHub. Pinned to the main
+# All fourteen stryke-* packages pulled from GitHub. Pinned to the main
 # branch for now — flip to `tag = "vX.Y.Z"` once releases start cutting.
 [deps]
 arrow    = { git = "https://github.com/MenkeTechnologies/stryke-arrow",    branch = "main" }
@@ -22,6 +22,8 @@ parquet  = { git = "https://github.com/MenkeTechnologies/stryke-parquet",  branc
 duckdb   = { git = "https://github.com/MenkeTechnologies/stryke-duckdb",   branch = "main" }
 redis    = { git = "https://github.com/MenkeTechnologies/stryke-redis",    branch = "main" }
 mongo    = { git = "https://github.com/MenkeTechnologies/stryke-mongo",    branch = "main" }
+k8s      = { git = "https://github.com/MenkeTechnologies/stryke-k8s",      branch = "main" }
+docker   = { git = "https://github.com/MenkeTechnologies/stryke-docker",   branch = "main" }
 
 [scripts]
 install      = "s install"
@@ -37,4 +39,6 @@ demo-parquet = "s demos/09_parquet.stk"
 demo-duckdb  = "s demos/10_duckdb.stk"
 demo-redis   = "s demos/11_redis.stk"
 demo-mongo   = "s demos/12_mongo.stk"
+demo-k8s     = "s demos/13_k8s.stk"
+demo-docker  = "s demos/14_docker.stk"
 all          = "s demos/run_all.stk"
