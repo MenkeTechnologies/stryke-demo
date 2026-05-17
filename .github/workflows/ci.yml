@@ -29,7 +29,8 @@ jobs:
           import tomllib, sys
           m = tomllib.loads(open("stryke.toml").read())
           want = {"arrow","mysql","postgres","spark","aws","gcp",
-                  "kafka","grpc","parquet","duckdb","redis","mongo"}
+                  "kafka","grpc","parquet","duckdb","redis","mongo",
+                  "k8s","docker"}
           got = set(m.get("deps", {}).keys())
           missing = want - got
           extra   = got - want
@@ -41,7 +42,7 @@ jobs:
                   print(f"{name}: missing `git` source", file=sys.stderr); sys.exit(1)
               if not dep["git"].startswith("https://github.com/MenkeTechnologies/stryke-"):
                   print(f"{name}: bad git url {dep['git']}", file=sys.stderr); sys.exit(1)
-          print(f"OK: 12 git deps wired ({sorted(got)})")
+          print(f"OK: {len(got)} git deps wired ({sorted(got)})")
           PY
 
   layout:
@@ -54,7 +55,7 @@ jobs:
           set -euo pipefail
           expected=(01_arrow 02_mysql 03_postgres 04_spark 05_aws 06_gcp \
                     07_kafka 08_grpc 09_parquet 10_duckdb 11_redis 12_mongo \
-                    run_all)
+                    13_k8s 14_docker run_all)
           fail=0
           for n in "${expected[@]}"; do
               f="demos/${n}.stk"
@@ -88,11 +89,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: All 12 per-package make targets present
+      - name: All 14 per-package make targets present
         run: |
           set -euo pipefail
           fail=0
-          for t in arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo all up down install; do
+          for t in arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo k8s docker all up down install; do
               grep -qE "^${t}:" Makefile || { echo "Makefile missing target: $t"; fail=1; }
           done
           exit $fail
@@ -104,10 +105,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: docker compose config
         run: docker compose -f docker-compose.yml config >/dev/null
-      - name: All six service containers present
+      - name: All seven service containers present
         run: |
           set -euo pipefail
-          for svc in mysql postgres redis mongo kafka localstack; do
+          for svc in mysql postgres redis mongo kafka localstack k3s; do
               docker compose -f docker-compose.yml config --services | grep -qx "$svc" \
                   || { echo "missing service: $svc"; exit 1; }
           done
