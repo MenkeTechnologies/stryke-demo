@@ -1,8 +1,8 @@
 #!/usr/bin/env stryke
-# demos/01_arrow.stk — stryke-arrow: in-process Apache Arrow IPC + CSV/Parquet/Feather/JSON I/O.
+# demos/01_arrow.stk — exercises every public stryke-arrow API fn.
 #
 # Run:  s demos/01_arrow.stk
-# Deps: none — Arrow runs purely in-process via Rust arrow-rs.
+# Deps: none — in-process via arrow-rs helper.
 
 use Arrow
 use Arrow::CSV
@@ -10,41 +10,327 @@ use Arrow::Parquet
 use Arrow::Feather
 use Arrow::JSON
 use Arrow::IPC
+use Arrow::DataFrame
 
-p "── stryke-arrow demo ──"
-p Arrow::version()
+sub col_names ($cols) {
+    my @k = keys %$cols
+    @k = sort @k
+    join ",", @k
+}
 
-# Build a small RecordBatch from columnar input.
-my $batch = Arrow::batch(
-    id    => [1, 2, 3, 4, 5],
-    name  => ["alice", "bob", "charlie", "dana", "eve"],
-    score => [98.5, 87.0, 91.2, 76.8, 100.0],
+p "── stryke-arrow demo (full API) ──"
+
+my @rows = (
+    { id => 1, name => "alice",   score => 98.5 },
+    { id => 2, name => "bob",     score => 87.0 },
+    { id => 3, name => "charlie", score => 91.2 },
+    { id => 4, name => "dana",    score => 76.8 },
+    { id => 5, name => "eve",     score => 100.0 },
 )
-p "rows=$batch->{num_rows} cols=$batch->{num_cols}"
-
-my $tmp = "/tmp/stryke-demo-arrow"
+my $tmp = "/tmp/stryke-demo-arrow-$$"
 mkdir $tmp unless -d $tmp
 
-# CSV round-trip.
-Arrow::CSV::write("$tmp/people.csv", $batch)
-my $back = Arrow::CSV::read("$tmp/people.csv")
-p "csv round-trip rows=$back->{num_rows}"
+# ── Arrow::helper_path ──
+p "Arrow::helper_path " . Arrow::helper_path()
 
-# Parquet (snappy by default).
-Arrow::Parquet::write("$tmp/people.parquet", $batch)
-my $pq = Arrow::Parquet::read("$tmp/people.parquet")
-p "parquet round-trip rows=$pq->{num_rows}"
+# ── Arrow::ensure_built ──
+p "Arrow::ensure_built " . Arrow::ensure_built()
 
-# Feather (arrow IPC file format).
-Arrow::Feather::write("$tmp/people.feather", $batch)
-p "feather written"
+# ── Arrow::version ──
+p "Arrow::version " . Arrow::version()
 
-# JSON line-delimited.
-Arrow::JSON::write("$tmp/people.ndjson", $batch)
-p "ndjson written"
+# ── Arrow::write ──
+Arrow::write("$tmp/core.parquet", \@rows, format => "parquet", compression => "zstd")
+Arrow::write("$tmp/core-snappy.parquet", \@rows, format => "parquet",
+    compression => "snappy", row_group => 2)
+p "Arrow::write parquet zstd + snappy"
 
-# Schema introspection.
-p "schema:"
-for my $f (@{$batch->{schema}}) {
-    p "  $f->{name}: $f->{type}"
+# ── Arrow::read ──
+my @all = Arrow::read("$tmp/core.parquet")
+p "Arrow::read all #{len(@all)} rows"
+my @lim = Arrow::read("$tmp/core.parquet", limit => 2)
+p "Arrow::read limit=2 #{len(@lim)} rows"
+my @skip = Arrow::read("$tmp/core.parquet", skip => 3, limit => 2)
+p "Arrow::read skip=3 limit=2 first=$skip[0]->{name}"
+my @cols = Arrow::read("$tmp/core.parquet", columns => ["id", "name"])
+p "Arrow::read columns=id,name fields=" . join(",", sort keys %{ $cols[0] })
+
+# ── Arrow::read_stream ──
+my $hi = 0
+Arrow::read_stream("$tmp/core.parquet",
+    callback => sub ($r) { $hi++ if $r->{score} > 90 })
+p "Arrow::read_stream score>90: $hi rows"
+my $all_s = Arrow::read_stream("$tmp/core.parquet",
+    limit => 3, callback => sub ($r) { 1 })
+p "Arrow::read_stream limit=3: $all_s rows"
+
+# ── Arrow::read_columnar ──
+my ($col) = Arrow::read_columnar("$tmp/core.parquet")
+p "Arrow::read_columnar all cols: " . col_names($col->{columns})
+my ($col2) = Arrow::read_columnar("$tmp/core.parquet",
+    columns => ["name", "score"], limit => 3)
+p "Arrow::read_columnar limit=3 cols: " . col_names($col2->{columns})
+
+# ── Arrow::schema ──
+my ($sch) = Arrow::schema("$tmp/core.parquet")
+p "Arrow::schema #{len($sch->{fields})} fields"
+
+# ── Arrow::stats ──
+my ($stats) = Arrow::stats("$tmp/core.parquet")
+p "Arrow::stats rows=$stats->{num_rows} bytes=$stats->{file_size}"
+
+# ── Arrow::row_count ──
+p "Arrow::row_count " . Arrow::row_count("$tmp/core.parquet")
+
+# ── Arrow::write_iter ──
+my $n = 0
+Arrow::write_iter("$tmp/iter.csv", sub {
+    return undef if $n >= 4
+    $n++
+    return { id => $n, name => "iter$n", score => $n * 11.0 }
+}, format => "csv")
+p "Arrow::write_iter csv $n rows"
+my $ni = 0
+Arrow::write_iter("$tmp/iter-pq.parquet", sub {
+    return undef if $ni >= 3
+    $ni++
+    return { id => $ni, name => "pq$ni", score => $ni * 5.0 }
+}, format => "parquet", compression => "lz4")
+p "Arrow::write_iter parquet lz4 $ni rows"
+
+# ── Arrow::convert ──
+Arrow::convert("$tmp/iter.csv", "$tmp/iter.parquet", compression => "snappy")
+p "Arrow::convert csv→parquet snappy"
+Arrow::convert("$tmp/iter-pq.parquet", "$tmp/iter.feather",
+    src_format => "parquet", dst_format => "feather")
+p "Arrow::convert parquet→feather explicit formats"
+
+# ── Arrow::CSV::write ──
+Arrow::CSV::write("$tmp/people.csv", \@rows)
+p "Arrow::CSV::write #{len(@rows)} rows"
+
+# ── Arrow::CSV::read ──
+p "Arrow::CSV::read all=" . len(Arrow::CSV::read("$tmp/people.csv"))
+p "Arrow::CSV::read limit=2=" . len(Arrow::CSV::read("$tmp/people.csv", limit => 2))
+p "Arrow::CSV::read skip=1 limit=2=" .
+    len(Arrow::CSV::read("$tmp/people.csv", skip => 1, limit => 2))
+
+# ── Arrow::CSV::read_stream ──
+my $cs = Arrow::CSV::read_stream("$tmp/people.csv",
+    limit => 3, callback => sub ($r) { 1 })
+p "Arrow::CSV::read_stream limit=3: $cs rows"
+my $cs2 = Arrow::CSV::read_stream("$tmp/people.csv",
+    columns => ["name"], callback => sub ($r) { 1 })
+p "Arrow::CSV::read_stream columns=name: $cs2 rows"
+
+# ── Arrow::CSV::read_columnar ──
+my ($cc) = Arrow::CSV::read_columnar("$tmp/people.csv", limit => 2)
+p "Arrow::CSV::read_columnar limit=2 cols: " . col_names($cc->{columns})
+my ($cc2) = Arrow::CSV::read_columnar("$tmp/people.csv", columns => ["id", "score"])
+p "Arrow::CSV::read_columnar columns=id,score"
+
+# ── Arrow::CSV::write_iter ──
+my $ci = 0
+Arrow::CSV::write_iter("$tmp/csv-iter.csv", sub {
+    return undef if $ci >= 2
+    $ci++
+    return { id => $ci, name => "csv$ci", score => 1.0 }
+})
+p "Arrow::CSV::write_iter $ci rows"
+
+# ── Arrow::CSV::schema ──
+my ($csch) = Arrow::CSV::schema("$tmp/people.csv")
+p "Arrow::CSV::schema #{len($csch->{fields})} fields"
+
+# ── Arrow::CSV::stats ──
+my ($cst) = Arrow::CSV::stats("$tmp/people.csv")
+p "Arrow::CSV::stats rows=$cst->{num_rows}"
+
+# ── Arrow::Parquet::write ──
+Arrow::Parquet::write("$tmp/people.parquet", \@rows, compression => "zstd")
+Arrow::Parquet::write("$tmp/people-gzip.parquet", \@rows,
+    compression => "gzip", row_group => 3)
+p "Arrow::Parquet::write zstd + gzip row_group=3"
+
+# ── Arrow::Parquet::read ──
+p "Arrow::Parquet::read all=" . len(Arrow::Parquet::read("$tmp/people.parquet"))
+p "Arrow::Parquet::read limit=2=" . len(Arrow::Parquet::read("$tmp/people.parquet", limit => 2))
+
+# ── Arrow::Parquet::read_stream ──
+my $ps = Arrow::Parquet::read_stream("$tmp/people.parquet",
+    limit => 4, callback => sub ($r) { 1 })
+p "Arrow::Parquet::read_stream limit=4: $ps rows"
+my $ps2 = Arrow::Parquet::read_stream("$tmp/people.parquet",
+    columns => ["name", "score"], callback => sub ($r) { 1 })
+p "Arrow::Parquet::read_stream columns: $ps2 rows"
+
+# ── Arrow::Parquet::read_columnar ──
+my ($pc) = Arrow::Parquet::read_columnar("$tmp/people.parquet", skip => 1, limit => 2)
+p "Arrow::Parquet::read_columnar skip=1 limit=2"
+my ($pc2) = Arrow::Parquet::read_columnar("$tmp/people.parquet", columns => ["id"])
+p "Arrow::Parquet::read_columnar columns=id"
+
+# ── Arrow::Parquet::write_iter ──
+my $pi = 0
+Arrow::Parquet::write_iter("$tmp/pq-iter.parquet", sub {
+    return undef if $pi >= 2
+    $pi++
+    return { id => $pi, name => "pq$pi", score => 2.0 }
+}, compression => "zstd", row_group => 1)
+p "Arrow::Parquet::write_iter $pi rows"
+
+# ── Arrow::Parquet::schema ──
+my ($psch) = Arrow::Parquet::schema("$tmp/people.parquet")
+p "Arrow::Parquet::schema #{len($psch->{fields})} fields"
+
+# ── Arrow::Parquet::stats ──
+my ($pst) = Arrow::Parquet::stats("$tmp/people.parquet")
+p "Arrow::Parquet::stats rows=$pst->{num_rows}"
+
+# ── Arrow::Parquet::row_count ──
+p "Arrow::Parquet::row_count " . Arrow::Parquet::row_count("$tmp/people.parquet")
+
+# ── Arrow::Feather::write ──
+Arrow::Feather::write("$tmp/people.feather", \@rows)
+p "Arrow::Feather::write ok"
+
+# ── Arrow::Feather::read ──
+p "Arrow::Feather::read all=" . len(Arrow::Feather::read("$tmp/people.feather"))
+p "Arrow::Feather::read limit=3=" . len(Arrow::Feather::read("$tmp/people.feather", limit => 3))
+
+# ── Arrow::Feather::read_stream ──
+my $fs = Arrow::Feather::read_stream("$tmp/people.feather",
+    skip => 2, callback => sub ($r) { 1 })
+p "Arrow::Feather::read_stream skip=2: $fs rows"
+my $fs2 = Arrow::Feather::read_stream("$tmp/people.feather",
+    columns => ["name"], limit => 2, callback => sub ($r) { 1 })
+p "Arrow::Feather::read_stream columns+limit: $fs2 rows"
+
+# ── Arrow::Feather::read_columnar ──
+my ($fc) = Arrow::Feather::read_columnar("$tmp/people.feather", limit => 3)
+p "Arrow::Feather::read_columnar limit=3"
+my ($fc2) = Arrow::Feather::read_columnar("$tmp/people.feather", columns => ["score"])
+p "Arrow::Feather::read_columnar columns=score"
+
+# ── Arrow::Feather::write_iter ──
+my $fi = 0
+Arrow::Feather::write_iter("$tmp/feather-iter.feather", sub {
+    return undef if $fi >= 2
+    $fi++
+    return { id => $fi, name => "ft$fi", score => 3.0 }
+})
+p "Arrow::Feather::write_iter $fi rows"
+
+# ── Arrow::Feather::schema ──
+my ($fsch) = Arrow::Feather::schema("$tmp/people.feather")
+p "Arrow::Feather::schema #{len($fsch->{fields})} fields"
+
+# ── Arrow::Feather::stats ──
+my ($fst) = Arrow::Feather::stats("$tmp/people.feather")
+p "Arrow::Feather::stats rows=$fst->{num_rows}"
+
+# ── Arrow::JSON::write ──
+Arrow::JSON::write("$tmp/people.ndjson", \@rows)
+p "Arrow::JSON::write ok"
+
+# ── Arrow::JSON::read ──
+p "Arrow::JSON::read all=" . len(Arrow::JSON::read("$tmp/people.ndjson"))
+p "Arrow::JSON::read skip=1 limit=2=" .
+    len(Arrow::JSON::read("$tmp/people.ndjson", skip => 1, limit => 2))
+
+# ── Arrow::JSON::read_stream ──
+my $js = Arrow::JSON::read_stream("$tmp/people.ndjson",
+    limit => 5, callback => sub ($r) { 1 })
+p "Arrow::JSON::read_stream limit=5: $js rows"
+my $js2 = Arrow::JSON::read_stream("$tmp/people.ndjson",
+    columns => ["id", "name"], callback => sub ($r) { 1 })
+p "Arrow::JSON::read_stream columns: $js2 rows"
+
+# ── Arrow::JSON::read_columnar ──
+my ($jc) = Arrow::JSON::read_columnar("$tmp/people.ndjson", limit => 4)
+p "Arrow::JSON::read_columnar limit=4"
+my ($jc2) = Arrow::JSON::read_columnar("$tmp/people.ndjson", columns => ["name", "score"])
+p "Arrow::JSON::read_columnar columns=name,score"
+
+# ── Arrow::JSON::write_iter ──
+my $ji = 0
+Arrow::JSON::write_iter("$tmp/json-iter.ndjson", sub {
+    return undef if $ji >= 2
+    $ji++
+    return { id => $ji, name => "js$ji", score => 4.0 }
+})
+p "Arrow::JSON::write_iter $ji rows"
+
+# ── Arrow::JSON::schema ──
+my ($jsch) = Arrow::JSON::schema("$tmp/people.ndjson")
+p "Arrow::JSON::schema #{len($jsch->{fields})} fields"
+
+# ── Arrow::JSON::stats ──
+my ($jst) = Arrow::JSON::stats("$tmp/people.ndjson")
+p "Arrow::JSON::stats rows=$jst->{num_rows}"
+
+# ── Arrow::IPC::write ──
+Arrow::IPC::write("$tmp/people.arrow", \@rows)
+p "Arrow::IPC::write ok"
+
+# ── Arrow::IPC::read ──
+p "Arrow::IPC::read all=" . len(Arrow::IPC::read("$tmp/people.arrow"))
+p "Arrow::IPC::read limit=2 columns=id=" .
+    len(Arrow::IPC::read("$tmp/people.arrow", limit => 2, columns => ["id"]))
+
+# ── Arrow::IPC::read_stream ──
+my $is = Arrow::IPC::read_stream("$tmp/people.arrow",
+    limit => 3, callback => sub ($r) { 1 })
+p "Arrow::IPC::read_stream limit=3: $is rows"
+my $is2 = Arrow::IPC::read_stream("$tmp/people.arrow",
+    skip => 1, columns => ["name"], callback => sub ($r) { 1 })
+p "Arrow::IPC::read_stream skip+columns: $is2 rows"
+
+# ── Arrow::IPC::read_columnar ──
+my ($ic) = Arrow::IPC::read_columnar("$tmp/people.arrow", limit => 2)
+p "Arrow::IPC::read_columnar limit=2"
+my ($ic2) = Arrow::IPC::read_columnar("$tmp/people.arrow", columns => ["score"])
+p "Arrow::IPC::read_columnar columns=score"
+
+# ── Arrow::IPC::write_iter ──
+my $ii = 0
+Arrow::IPC::write_iter("$tmp/ipc-iter.arrow", sub {
+    return undef if $ii >= 2
+    $ii++
+    return { id => $ii, name => "ipc$ii", score => 5.0 }
+})
+p "Arrow::IPC::write_iter $ii rows"
+
+# ── Arrow::IPC::schema ──
+my ($isch) = Arrow::IPC::schema("$tmp/people.arrow")
+p "Arrow::IPC::schema #{len($isch->{fields})} fields"
+
+# ── Arrow::IPC::stats ──
+my ($ist) = Arrow::IPC::stats("$tmp/people.arrow")
+p "Arrow::IPC::stats rows=$ist->{num_rows}"
+
+# ── Arrow::DataFrame::load ──
+my $df = Arrow::DataFrame::load("$tmp/people.parquet")
+if (ref($df) eq "HASH") {
+    p "Arrow::DataFrame::load columnar cols: " . col_names($df)
+} else {
+    p "Arrow::DataFrame::load " . $df->nrow . " rows × " . $df->ncol . " cols"
 }
+my $df2 = Arrow::DataFrame::load("$tmp/people.parquet", limit => 3, columns => ["id", "name"])
+if (ref($df2) eq "HASH") {
+    p "Arrow::DataFrame::load limit=3 columns=id,name"
+}
+
+# ── Arrow::DataFrame::dump ──
+Arrow::DataFrame::dump("$tmp/df-out.parquet", $df, format => "parquet", compression => "zstd")
+p "Arrow::DataFrame::dump parquet zstd"
+Arrow::DataFrame::dump("$tmp/df-out.csv", $df, format => "csv")
+my $df_csv = "$tmp/df-out.csv"
+p "Arrow::DataFrame::dump csv (#{len(Arrow::read($df_csv))} rows)"
+
+# cleanup
+for my $f (glob("$tmp/*")) {
+    unlink $f if -f $f
+}
+rmdir $tmp if -d $tmp
+p "done — exercised every Arrow public fn"

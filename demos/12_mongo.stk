@@ -1,45 +1,204 @@
 #!/usr/bin/env stryke
-# demos/12_mongo.stk — stryke-mongo: CRUD + aggregate + index admin.
+# demos/12_mongo.stk — exercises every public stryke-mongo API fn.
 #
 # Run:  MONGODB_URI=mongodb://localhost:27017 s demos/12_mongo.stk
-# Live: docker run --rm -p27017:27017 mongo:7
 
 use Mongo
 
-p "── stryke-mongo demo ──"
-p Mongo::version()
+p "── stryke-mongo demo (full API) ──"
+
+# ── Mongo::helper_path ──
+p "Mongo::helper_path " . Mongo::helper_path()
+
+# ── Mongo::ensure_built ──
+p "Mongo::ensure_built " . Mongo::ensure_built()
+
+# ── Mongo::version ──
+p "Mongo::version " . Mongo::version()
+
+# ── Mongo::ping ──
 exit 1 unless Mongo::ping()
+p "Mongo::ping ok"
 
 my $t = "demo/people_$$"
 
-Mongo::insert_one $t, { name => "alice",   age => 30, role => "admin" }
-Mongo::insert_many $t, [
+# ── Mongo::insert_one ──
+Mongo::insert_one($t, { name => "alice", age => 30, role => "admin" })
+p "Mongo::insert_one alice ok"
+
+# ── Mongo::insert_many ──
+Mongo::insert_many($t, [
     { name => "bob",     age => 25 },
     { name => "charlie", age => 35 },
     { name => "dana",    age => 28 },
-]
-p "count: " . Mongo::count($t)
+    { name => "eve",     age => 32, role => "user" },
+])
+p "Mongo::insert_many 4 docs ok"
 
-my @over28 = Mongo::find $t,
+# ── Mongo::count ──
+p "Mongo::count all " . Mongo::count($t)
+p "Mongo::count filter age>28 " .
+    Mongo::count($t, filter => { age => { '$gt' => 28 } })
+p "Mongo::count filter role=admin " .
+    Mongo::count($t, filter => { role => "admin" })
+
+# ── Mongo::find_one ──
+my ($one) = Mongo::find_one($t, filter => { name => "alice" })
+p "Mongo::find_one alice age=$one->{age}"
+my ($one2) = Mongo::find_one($t,
+    filter     => { name => "bob" },
+    projection => { name => 1, age => 1, _id => 0 },
+)
+p "Mongo::find_one projection name=$one2->{name}"
+my ($one3) = Mongo::find_one($t,
+    filter => { age => { '$gte' => 30 } },
+    sort   => { age => -1 },
+)
+p "Mongo::find_one sort age=$one3->{name}"
+
+# ── Mongo::find ──
+my @over28 = Mongo::find($t,
     filter => { age => { '$gt' => 28 } },
-    sort   => { age => -1 }
-p "over-28:"
-for my $u (@over28) {
-    p "  $u->{name} (age $u->{age})"
-}
+    sort   => { age => -1 },
+    limit  => 10,
+)
+p "Mongo::find over-28: #{len(@over28)} docs"
+my @proj = Mongo::find($t,
+    filter     => {},
+    projection => { name => 1, _id => 0 },
+    skip       => 1,
+    limit      => 2,
+)
+p "Mongo::find projection+skip+limit: #{len(@proj)} names=" .
+    join(",", map { $_->{name} } @proj)
+my @sorted = Mongo::find($t,
+    filter => { role => "user" },
+    sort   => { name => 1 },
+    limit  => 5,
+    skip   => 0,
+)
+p "Mongo::find role=user sort+limit: #{len(@sorted)} docs"
 
-# Aggregate: bucket by role.
-my @groups = Mongo::aggregate $t, [
-    { '$group' => { _id => '$role', n => { '$sum' => 1 } } }
-]
-p "by role:"
-p "  " . to_json($_) for @groups
+# ── Mongo::find_stream ──
+my $sn = Mongo::find_stream($t,
+    filter   => {},
+    callback => sub ($d) { p "  stream: $d->{name}" },
+)
+p "Mongo::find_stream all $sn docs"
+my $sn2 = Mongo::find_stream($t,
+    filter   => { age => { '$gte' => 28 } },
+    limit    => 2,
+    sort     => { name => 1 },
+    callback => sub ($d) { 1 },
+)
+p "Mongo::find_stream filter+limit $sn2 docs"
+my $sn3 = Mongo::find_stream($t,
+    filter     => {},
+    projection => { name => 1, age => 1, _id => 0 },
+    skip       => 2,
+    limit      => 3,
+    callback   => sub ($d) { 1 },
+)
+p "Mongo::find_stream projection+skip $sn3 docs"
 
-# Index admin.
-Mongo::create_index $t, { name => 1 }, unique => 1
-my @ix = Mongo::indexes $t
-p "indexes:"
-p "  $_->{name}" for @ix
+# ── Mongo::aggregate ──
+my @groups = Mongo::aggregate($t, [
+    { '$group' => { _id => '$role', n => { '$sum' => 1 } } },
+    { '$sort'  => { n => -1 } },
+])
+p "Mongo::aggregate by role #{len(@groups)} group(s)"
+my @avg = Mongo::aggregate($t, [
+    { '$match' => { age => { '$gte' => 25 } } },
+    { '$group' => { _id => undef, avg_age => { '$avg' => '$age' } } },
+])
+p "Mongo::aggregate avg_age=" . ($avg[0]->{avg_age} // "?")
+my @top = Mongo::aggregate($t, [
+    { '$sort'  => { age => -1 } },
+    { '$limit' => 2 },
+    { '$project' => { name => 1, age => 1, _id => 0 } },
+])
+p "Mongo::aggregate top-2 #{len(@top)} docs"
 
-Mongo::delete_many $t, {}
-p "cleaned up"
+# ── Mongo::update_one ──
+Mongo::update_one($t, { name => "alice" }, { '$inc' => { age => 1 } })
+p "Mongo::update_one inc alice age=" .
+    Mongo::find_one($t, filter => { name => "alice" })->{age}
+Mongo::update_one($t, { name => "missing" }, { '$set' => { tier => "ghost" } },
+    upsert => 1,
+)
+p "Mongo::update_one upsert count=" . Mongo::count($t)
+Mongo::update_one($t, { name => "eve" }, { '$set' => { tier => "senior" } })
+p "Mongo::update_one set eve tier=" .
+    Mongo::find_one($t, filter => { name => "eve" })->{tier}
+
+# ── Mongo::update_many ──
+my ($um) = Mongo::update_many($t,
+    { age => { '$lt' => 30 } },
+    { '$set' => { tier => "junior" } },
+)
+p "Mongo::update_many matched=$um->{matched_count}"
+my ($um2) = Mongo::update_many($t,
+    { tier => "junior" },
+    { '$inc' => { age => 1 } },
+)
+p "Mongo::update_many inc tier=junior modified=$um2->{modified_count}"
+
+# ── Mongo::replace_one ──
+Mongo::replace_one($t, { name => "dana" },
+    { name => "dana", age => 29, role => "user", tier => "mid" },
+)
+p "Mongo::replace_one dana tier=" .
+    Mongo::find_one($t, filter => { name => "dana" })->{tier}
+Mongo::replace_one($t, { name => "newhire" },
+    { name => "newhire", age => 22, role => "user" },
+    upsert => 1,
+)
+p "Mongo::replace_one upsert ok"
+Mongo::replace_one($t, { name => "charlie" },
+    { name => "charlie", age => 36, role => "lead", tier => "senior" },
+)
+p "Mongo::replace_one charlie role=lead"
+
+# ── Mongo::create_index ──
+Mongo::create_index($t, { name => 1 }, unique => 1)
+p "Mongo::create_index unique name ok"
+Mongo::create_index($t, { age => -1 }, name => "age_desc_idx")
+p "Mongo::create_index name=age_desc_idx ok"
+Mongo::create_index($t, { tier => 1, age => 1 }, name => "tier_age_idx")
+p "Mongo::create_index compound tier+age ok"
+
+# ── Mongo::indexes ──
+my @ix = Mongo::indexes($t)
+p "Mongo::indexes #{len(@ix)}: " . join(",", map { $_->{name} } @ix)
+
+# ── Mongo::drop_index ──
+Mongo::drop_index($t, "age_desc_idx")
+p "Mongo::drop_index age_desc_idx ok"
+Mongo::drop_index($t, "tier_age_idx")
+p "Mongo::drop_index tier_age_idx ok"
+
+# ── Mongo::list_databases ──
+my @dbs = Mongo::list_databases()
+p "Mongo::list_databases #{len(@dbs)}: " . join(",", map { $_->{name} } @dbs)
+
+# ── Mongo::list_collections ──
+my @colls = Mongo::list_collections("demo")
+p "Mongo::list_collections demo #{len(@colls)}: " . join(",", @colls)
+
+# ── Mongo::delete_one ──
+my ($d1) = Mongo::delete_one($t, { name => "bob" })
+p "Mongo::delete_one bob deleted=$d1->{deleted_count}"
+my ($d1b) = Mongo::delete_one($t, { name => "newhire" })
+p "Mongo::delete_one newhire deleted=$d1b->{deleted_count}"
+my ($d1c) = Mongo::delete_one($t, { name => "missing-ghost" })
+p "Mongo::delete_one missing deleted=$d1c->{deleted_count}"
+
+# ── Mongo::delete_many ──
+my ($dm) = Mongo::delete_many($t, { tier => "junior" })
+p "Mongo::delete_many tier=junior deleted=$dm->{deleted_count}"
+my ($dm2) = Mongo::delete_many($t, { role => "user" })
+p "Mongo::delete_many role=user deleted=$dm2->{deleted_count}"
+my ($dm3) = Mongo::delete_many($t, {})
+p "Mongo::delete_many rest deleted=$dm3->{deleted_count}"
+
+p "done"

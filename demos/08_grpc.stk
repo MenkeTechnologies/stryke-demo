@@ -1,28 +1,159 @@
 #!/usr/bin/env stryke
-# demos/08_grpc.stk — stryke-grpc: reflection + unary + streaming calls.
+# demos/08_grpc.stk — exercises every public stryke-grpc API fn.
 #
 # Run:  s demos/08_grpc.stk localhost:50051
 # Live: docker run --rm -p50051:50051 fullstorydev/grpcurl-test-server:latest
-#       (or any reflection-enabled gRPC server)
 
 use Grpc
 
 my $target = $ARGV[0] // "localhost:50051"
 my %opts   = (target => $target, plaintext => 1)
 
-p "── stryke-grpc demo ──"
-p Grpc::version()
+sub try_call ($method, $req, %call_opts) {
+    my $reply = eval { Grpc::call($method, $req, %call_opts) }
+    return $reply if defined $reply && ref($reply) eq "HASH"
+    undef
+}
 
-# Reflection: list services on the server.
+p "── stryke-grpc demo (full API) ──"
+
+# ── Grpc::helper_path ──
+p "Grpc::helper_path " . Grpc::helper_path()
+
+# ── Grpc::ensure_built ──
+p "Grpc::ensure_built " . Grpc::ensure_built()
+
+# ── Grpc::version ──
+p "Grpc::version " . Grpc::version()
+
+# ── Grpc::ping ──
+p "Grpc::ping default: " . (Grpc::ping(%opts) ? "reflection ok" : "down")
+p "Grpc::ping timeout_s=5: " . (Grpc::ping(target => $target, plaintext => 1, timeout_s => 5) ? "ok" : "down")
+p "Grpc::ping timeout_s=60: " . (Grpc::ping(target => $target, plaintext => 1, timeout_s => 60) ? "ok" : "down")
+
+# ── Grpc::list ──
 my @services = Grpc::list(%opts)
-p "services on $target:"
+p "Grpc::list #{len(@services)} service(s) on $target:"
 for my $s (@services) {
     p "  $s->{service}"
 }
-
-# Describe the first one if any.
+my @services2 = Grpc::list(
+    target    => $target,
+    plaintext => 1,
+    timeout_s => 10,
+    headers   => { "x-demo" => "list" },
+)
+p "Grpc::list timeout_s=10 headers #{len(@services2)} service(s)"
+my @services3 = Grpc::list(
+    target    => $target,
+    plaintext => 1,
+    timeout_s => 15,
+    headers   => ["x-array:stryke", "x-run:demo"],
+)
+p "Grpc::list headers=array #{len(@services3)} service(s)"
 if (@services) {
-    my $name = $services[0]->{service}
-    my $d = Grpc::describe($name, %opts)
-    p "describe $name: " . to_json($d)
+    p "Grpc::list first service: $services[0]->{service}"
+    p "Grpc::list last service: $services[-1]->{service}"
 }
+
+# ── Grpc::describe ── (each service gets its own invocation block)
+if (@services) {
+    for my $s (@services) {
+        my $svc = $s->{service}
+        p ""
+        p "── Grpc::describe $svc ──"
+        my ($d) = Grpc::describe($svc, %opts)
+        if (ref($d->{methods}) eq "ARRAY") {
+            p "  methods=#{len($d->{methods})}"
+            for my $m (@{ $d->{methods} }) {
+                my $mn = ref($m) eq "HASH" ? ($m->{name} // $m->{method} // "?") : $m
+                p "    $mn"
+            }
+        } else {
+            p "  describe: " . to_json($d)
+        }
+        my ($d2) = Grpc::describe($svc,
+            target => $target, plaintext => 1, timeout_s => 20,
+            headers => { "x-describe" => $svc },
+        )
+        p "  describe timeout_s=20 ok"
+    }
+    # Method-level describe when Greeter is present.
+    my ($greeter_desc) = Grpc::describe("helloworld.Greeter/SayHello", %opts)
+    if (defined $greeter_desc) {
+        p ""
+        p "── Grpc::describe helloworld.Greeter/SayHello ──"
+        p "  " . to_json($greeter_desc)
+    }
+    my ($greeter_svc) = Grpc::describe("helloworld.Greeter", %opts)
+    if (defined $greeter_svc) {
+        p ""
+        p "── Grpc::describe helloworld.Greeter (service) ──"
+        p "  methods=#{len($greeter_svc->{methods} // [])}"
+    }
+} else {
+    p "Grpc::describe skipped (no services — start grpcurl-test-server)"
+}
+
+# ── Grpc::call ──
+if (Grpc::ping(%opts)) {
+    p ""
+    p "── Grpc::call helloworld.Greeter/SayHello ──"
+    my $reply = try_call("helloworld.Greeter/SayHello", { name => "stryke" }, %opts)
+    if (defined $reply) {
+        p "  message=$reply->{message}"
+    } else {
+        p "  eval fallback (SayHello unavailable on this server)"
+    }
+    my $reply2 = try_call("helloworld.Greeter/SayHello", { name => "demo" },
+        target => $target, plaintext => 1, timeout_s => 5,
+        headers => { "x-demo" => "stryke" },
+    )
+    if (defined $reply2) {
+        p "  headers variant message=$reply2->{message}"
+    } else {
+        p "  headers variant eval fallback"
+    }
+    my $reply3 = try_call("helloworld.Greeter/SayHello", { name => "timeout" },
+        target => $target, plaintext => 1, timeout_s => 30,
+        headers => ["authorization:Bearer demo", "x-run:grpc-demo"],
+    )
+    if (defined $reply3) {
+        p "  array-headers variant message=$reply3->{message}"
+    } else {
+        p "  array-headers variant eval fallback"
+    }
+    # grpcurl-test-server also exposes grpc.reflection — try a bogus method gracefully.
+    p ""
+    p "── Grpc::call (eval fallback on unknown method) ──"
+    my $bogus = try_call("helloworld.Greeter/NoSuchMethod", { name => "x" }, %opts)
+    p "  bogus method reply=" . (defined $bogus ? to_json($bogus) : "undef (expected)")
+    # Second call variant with insecure+authority (TLS servers only — noop on plaintext test server).
+    p ""
+    p "── Grpc::call (timeout_s variant) ──"
+    my $reply4 = try_call("helloworld.Greeter/SayHello", { name => "timeout30" },
+        target => $target, plaintext => 1, timeout_s => 30)
+    p "  timeout_s=30 reply=" . (defined $reply4 ? $reply4->{message} : "eval fallback")
+    p ""
+    p "── Grpc::call (plain name variant) ──"
+    my $reply5 = try_call("helloworld.Greeter/SayHello", { name => "MenkeTechnologies" },
+        target => $target, plaintext => 1)
+    p "  reply=" . (defined $reply5 ? $reply5->{message} : "eval fallback")
+    p ""
+    p "── Grpc::call (empty name edge) ──"
+    my $reply6 = try_call("helloworld.Greeter/SayHello", { name => "" }, %opts)
+    p "  empty name reply=" . (defined $reply6 ? ($reply6->{message} // "empty") : "eval fallback")
+    if (@services >= 1) {
+        p ""
+        p "── Grpc::describe (timeout_s=25 per service) ──"
+        for my $s (@services) {
+            my $svc = $s->{service}
+            my ($dx) = Grpc::describe($svc, target => $target, plaintext => 1, timeout_s => 25)
+            p "  $svc ok=" . (defined $dx ? "yes" : "no")
+        }
+    }
+} else {
+    p "Grpc::call skipped (server down — pass host:port arg 1)"
+}
+
+p "done"

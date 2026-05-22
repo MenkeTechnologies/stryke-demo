@@ -1,59 +1,216 @@
 #!/usr/bin/env stryke
-# demos/14_docker.stk — stryke-docker: pull + run + inspect + logs + exec + cleanup.
+# demos/14_docker.stk — exercises every public stryke-docker API fn.
 #
 # Run:  s demos/14_docker.stk
-# Needs: a reachable Docker daemon (Docker Desktop, dockerd, or DOCKER_HOST).
+# Skips: prune (destructive).
 
 use Docker
 
-p "── stryke-docker demo ──"
-p "version: " . Docker::version()->{Version}
+p "── stryke-docker demo (full API) ──"
+
+# ── Docker::helper_path ──
+p "Docker::helper_path " . Docker::helper_path()
+
+# ── Docker::ensure_built ──
+p "Docker::ensure_built " . Docker::ensure_built()
+
+# ── Docker::version ──
+my ($ver) = Docker::version()
+p "Docker::version " . $ver->{Version}
+
+# ── Docker::ping ──
 exit 1 unless Docker::ping()
+p "Docker::ping ok"
+
+# ── Docker::info ──
+my ($info) = Docker::info()
+p "Docker::info containers=$info->{Containers} images=$info->{Images}"
 
 my $name = "stryke-demo-$$"
+my $net  = "stryke-net-$$"
+my $vol  = "stryke-vol-$$"
+my $tag  = "stryke-demo-$$:local"
 
-# Pull (drain progress quietly).
-my @pull = Docker::pull "busybox:latest"
-p "pulled busybox (#{len(@pull)} progress events)"
+# ── Docker::pull ──
+my @pull = Docker::pull("busybox:latest")
+p "Docker::pull #{len(@pull)} events"
+my $pull_cb = Docker::pull("busybox:latest", platform => "linux/amd64",
+    callback => sub ($e) { 1 })
+p "Docker::pull platform+callback $pull_cb events"
 
-# Run a detached sleeper.
-my $r = Docker::run "busybox:latest",
+# ── Docker::tag ──
+Docker::tag("busybox:latest", $tag)
+p "Docker::tag $tag"
+
+# ── Docker::images ──
+my @imgs = Docker::images(limit => 5, filters => { reference => ["busybox"] })
+p "Docker::images busybox refs: #{len(@imgs)}"
+my @imgs2 = Docker::images(all => 1, filters => { dangling => ["false"] })
+p "Docker::images all dangling=false #{len(@imgs2)} refs"
+
+# ── Docker::network_create ──
+Docker::network_create($net, driver => "bridge", label => ["stryke.demo=14"])
+p "Docker::network_create $net"
+
+# ── Docker::networks ──
+p "Docker::networks includes $net: " .
+    (grep { $_->{Name} eq $net } Docker::networks() ? "yes" : "no")
+p "Docker::networks filter label: " .
+    len(Docker::networks(filters => { label => ["stryke.demo=14"] }))
+
+# ── Docker::volume_create ──
+Docker::volume_create($vol, label => ["stryke.demo=14"], driver => "local")
+p "Docker::volume_create $vol"
+
+# ── Docker::volumes ──
+p "Docker::volumes includes $vol: " .
+    (grep { $_->{Name} eq $vol } Docker::volumes() ? "yes" : "no")
+p "Docker::volumes filter label: " .
+    len(Docker::volumes(filters => { label => ["stryke.demo=14"] }))
+
+# ── Docker::create ──
+my ($created) = Docker::create("busybox:latest",
+    name    => "$name-lifecycle",
+    cmd     => ["sleep", "3600"],
+    network => $net,
+    label   => ["stryke.demo=14"],
+)
+p "Docker::create $created->{id}"
+
+# ── Docker::start ──
+Docker::start("$name-lifecycle")
+p "Docker::start lifecycle ok"
+
+# ── Docker::stop ──
+Docker::stop("$name-lifecycle", time => 2)
+p "Docker::stop time=2 ok"
+
+# ── Docker::restart ──
+Docker::restart("$name-lifecycle", time => 2)
+p "Docker::restart time=2 ok"
+
+# ── Docker::run ──
+my ($r) = Docker::run("busybox:latest",
     name   => $name,
     cmd    => ["sh", "-c", "i=0; while true; do echo tick=\$i; i=\$((i+1)); sleep 1; done"],
     label  => ["stryke.demo=14"],
-    detach => 1
-p "started: $r->{id}"
+    detach => 1,
+    rm     => 0,
+)
+p "Docker::run detach id=$r->{id}"
+my ($r2) = Docker::run("busybox:latest",
+    name => "$name-rm",
+    cmd  => ["echo", "oneshot-run"],
+    rm   => 1,
+)
+p "Docker::run rm=1 id=$r2->{id}"
 
-# Inspect.
-my $info = Docker::inspect $name
-p "state: $info->{State}{Status}  pid: $info->{State}{Pid}"
+# ── Docker::ps ──
+my @ps = Docker::ps(all => 1, filters => { label => ["stryke.demo=14"] })
+p "Docker::ps all+label #{len(@ps)} container(s)"
+my @ps2 = Docker::ps(limit => 3, size => 1)
+p "Docker::ps limit=3 size #{len(@ps2)} container(s)"
 
-# ps with filter.
-my @match = Docker::ps all => 1, filters => { label => ["stryke.demo=14"] }
-p "ps (by label): #{len(@match)} container(s)"
+# ── Docker::inspect ──
+my ($ins) = Docker::inspect($name)
+p "Docker::inspect state=$ins->{State}{Status}"
 
-# Give the container a few ticks, then exec into it.
-sleep 2
+# ── Docker::events ──
+my $since = time()
+sleep 1
+my $ev = Docker::events(since => $since, filters => { container => [$r->{id}] },
+    callback => sub ($e) { p "  event: $e->{Action} $e->{Actor}{Attributes}{name}" })
+p "Docker::events since+filter $ev event(s)"
+sleep 1
+my $ev2 = Docker::events(since => $since, until => time() + 1,
+    filters => { type => ["container"] },
+    callback => sub ($e) { 1 })
+p "Docker::events type=container $ev2 event(s)"
 
-my $exec = Docker::exec $name, ["sh", "-c", "uname -a; echo END"],
-    callback => sub ($stream, $data) {
-        $data =~ s/\s+$//
-        p "  [$stream] $data" if $data ne ""
-    }
-p "exec exit_code=$exec->{exit_code}"
+sleep 1
 
-# Tail recent logs.
-p ""
-p "── logs (last 5 lines)"
-my $logs = Docker::logs $name, tail => "5"
-p "  $_" for split /\n/, $logs
+# ── Docker::exec ──
+my ($exec) = Docker::exec($name, ["sh", "-c", "uname -a"],
+    callback => sub ($s, $d) {
+        $d =~ s/\s+$//
+        p "  exec[$s]: $d" if $d ne ""
+    })
+p "Docker::exec exit=$exec->{exit_code}"
+my ($exec2) = Docker::exec($name, ["echo", "hello"],
+    user => "0", workdir => "/",
+    callback => sub ($s, $d) { 1 })
+p "Docker::exec user+workdir chunks=$exec2->{chunks}"
 
-# Stats snapshot.
-my $s = Docker::stats $name
-my $mem = $s->{memory_stats}{usage} // 0
-p ""
-p "mem snapshot: $mem bytes"
+# ── Docker::logs ──
+my $logs = Docker::logs($name, tail => "3")
+p "Docker::logs tail=3 lines=" . len([split /\n/, $logs])
+my $logs2 = Docker::logs($name, tail => "2", timestamps => 1, since => $since)
+p "Docker::logs timestamps since lines=" . len([split /\n/, $logs2])
 
-# Cleanup.
-Docker::rm $name, force => 1
-p "cleaned up $name"
+# ── Docker::logs_follow ──
+my $lf_name = "$name-logfollow"
+Docker::create("busybox:latest", name => $lf_name, cmd => ["echo", "logfollow-ok"])
+Docker::start($lf_name)
+sleep 1
+my $lf = Docker::logs_follow($lf_name, tail => "5",
+    callback => sub ($s, $d) {
+        $d =~ s/\s+$//
+        p "  logs_follow[$s]: $d" if $d ne ""
+    })
+p "Docker::logs_follow $lf chunk(s)"
+my $lf2 = Docker::logs_follow($lf_name, tail => "3", timestamps => 1,
+    callback => sub ($s, $d) { 1 })
+p "Docker::logs_follow timestamps $lf2 chunk(s)"
+Docker::rm($lf_name, force => 1)
+
+# ── Docker::stats ──
+my ($st) = Docker::stats($name)
+p "Docker::stats mem=" . ($st->{memory_stats}{usage} // 0)
+
+# ── Docker::kill ──
+Docker::kill("$name-lifecycle", signal => "TERM")
+p "Docker::kill signal=TERM ok"
+
+# ── Docker::stop ──
+Docker::stop($name, time => 2)
+p "Docker::stop main container ok"
+
+# ── Docker::rm ──
+Docker::rm($name, force => 1)
+Docker::rm("$name-lifecycle", force => 1)
+p "Docker::rm force ok"
+
+# ── Docker::rmi ──
+Docker::rmi($tag)
+p "Docker::rmi $tag"
+
+# ── Docker::network_rm ──
+Docker::network_rm($net)
+p "Docker::network_rm $net"
+
+# ── Docker::volume_rm ──
+Docker::volume_rm($vol)
+p "Docker::volume_rm $vol"
+
+# ── Docker::push ──
+if ($ENV{STRYKE_DEMO_DOCKER_PUSH}) {
+    my $pn = Docker::push($ENV{STRYKE_DEMO_DOCKER_PUSH},
+        callback => sub ($e) { 1 })
+    p "Docker::push $pn events"
+} else {
+    p "Docker::push skipped (set STRYKE_DEMO_DOCKER_PUSH=img to exercise)"
+}
+
+# ── Docker::build ──
+if ($ENV{STRYKE_DEMO_DOCKER_BUILD}) {
+    my $bn = Docker::build($ENV{STRYKE_DEMO_DOCKER_BUILD},
+        tag => "stryke-build-test:latest", pull => 1, rm => 1,
+        callback => sub ($e) { 1 })
+    p "Docker::build pull+rm $bn events"
+} else {
+    p "Docker::build skipped (set STRYKE_DEMO_DOCKER_BUILD=/path/to/dir)"
+}
+
+# Docker::prune intentionally skipped (destructive)
+
+p "done"

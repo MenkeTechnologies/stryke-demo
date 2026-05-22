@@ -1,40 +1,204 @@
 #!/usr/bin/env stryke
-# demos/11_redis.stk — stryke-redis: KV + lists + hashes + sets + sorted sets + pubsub.
+# demos/11_redis.stk — exercises every public stryke-redis API fn.
 #
 # Run:  REDIS_URL=redis://localhost s demos/11_redis.stk
-# Live: docker run --rm -p6379:6379 redis:7
 
 use Redis
 
-p "── stryke-redis demo ──"
-p Redis::version()
-exit 1 unless Redis::ping()
-
-# KV.
-Redis::set("greeting", "hello stryke")
-p "get: " . Redis::get("greeting")
-
-Redis::mset({ a => 1, b => 2, c => 3 })
-p "mget: " . join(",", Redis::mget(["a","b","c"]))
-
-p "incr: " . Redis::incr("counter")
-p "incr by 10: " . Redis::incr("counter", by => 10)
-
-# List.
-Redis::lpush "events", ["a","b","c","d"]
-p "lrange: " . join(",", Redis::lrange("events", 0, -1))
-
-# Hash.
-Redis::hmset "user:42", { name => "alice", age => 30, role => "admin" }
-my $u = Redis::hgetall "user:42"
-p "hash: name=$u->{name} age=$u->{age} role=$u->{role}"
-
-# Sorted set.
-Redis::zadd "leaderboard", { alice => 100, bob => 200, charlie => 150 }
-my @lb = Redis::zrange "leaderboard", 0, -1, withscores => 1, rev => 1
-p "leaderboard (top→bottom):"
-for my $e (@lb) {
-    p "  $e->{member}: $e->{score}"
+sub tag_join ($key) {
+    my @m = Redis::smembers($key)
+    @m = sort @m
+    join ",", @m
 }
 
-Redis::del ["greeting","a","b","c","counter","events","user:42","leaderboard"]
+p "── stryke-redis demo (full API) ──"
+
+# ── Redis::helper_path ──
+p "Redis::helper_path " . Redis::helper_path()
+
+# ── Redis::ensure_built ──
+p "Redis::ensure_built " . Redis::ensure_built()
+
+# ── Redis::version ──
+p "Redis::version " . Redis::version()
+
+# ── Redis::ping ──
+exit 1 unless Redis::ping()
+p "Redis::ping ok"
+
+# ── Redis::set ──
+Redis::set("demo:greeting", "hello", ex => 120)
+p "Redis::set ex=120 ok"
+Redis::set("demo:nx-key", "first", nx => 1)
+Redis::set("demo:nx-key", "second", nx => 1)
+p "Redis::set nx kept=" . Redis::get("demo:nx-key")
+Redis::set("demo:xx-key", "exists", xx => 1)
+p "Redis::set xx=" . Redis::get("demo:xx-key")
+
+# ── Redis::get ──
+p "Redis::get greeting: " . Redis::get("demo:greeting")
+p "Redis::get missing: " . (Redis::get("demo:missing") // "undef")
+
+# ── Redis::mset ──
+Redis::mset({ "demo:a" => 1, "demo:b" => 2, "demo:c" => 3 })
+p "Redis::mset 3 keys ok"
+
+# ── Redis::mget ──
+p "Redis::mget: " . join(",", Redis::mget(["demo:a", "demo:b", "demo:c"]))
+p "Redis::mget partial: " . join(",", Redis::mget(["demo:a", "demo:missing"]))
+
+# ── Redis::exists ──
+p "Redis::exists demo:a = " . Redis::exists(["demo:a", "demo:missing"])
+
+# ── Redis::incr ──
+Redis::set("demo:counter", "0")
+p "Redis::incr: " . Redis::incr("demo:counter")
+p "Redis::incr by=5: " . Redis::incr("demo:counter", by => 5)
+
+# ── Redis::decr ──
+p "Redis::decr: " . Redis::decr("demo:counter")
+p "Redis::decr by=2: " . Redis::decr("demo:counter", by => 2)
+
+# ── Redis::expire ──
+Redis::expire("demo:greeting", 60)
+p "Redis::expire greeting ttl pending"
+
+# ── Redis::ttl ──
+p "Redis::ttl greeting: " . Redis::ttl("demo:greeting")
+p "Redis::ttl missing: " . Redis::ttl("demo:missing")
+
+# ── Redis::type ──
+p "Redis::type greeting: " . Redis::type("demo:greeting")
+p "Redis::type counter: " . Redis::type("demo:counter")
+
+# ── Redis::keys ──
+p "Redis::keys demo:* count=" . len(Redis::keys("demo:*"))
+
+# ── Redis::scan ──
+p "Redis::scan match=demo:* count=50 limit=20: " .
+    len(Redis::scan(match => "demo:*", count => 50, limit => 20))
+p "Redis::scan match=demo:a* limit=5: " .
+    len(Redis::scan(match => "demo:a*", limit => 5))
+
+# ── Redis::lpush ──
+Redis::lpush("demo:events", ["a", "b"])
+p "Redis::lpush 2 items llen=" . Redis::llen("demo:events")
+
+# ── Redis::rpush ──
+Redis::rpush("demo:events", ["c", "d"])
+p "Redis::rpush 2 items llen=" . Redis::llen("demo:events")
+
+# ── Redis::llen ──
+p "Redis::llen events: " . Redis::llen("demo:events")
+
+# ── Redis::lrange ──
+p "Redis::lrange 0,-1: " . join(",", Redis::lrange("demo:events", 0, -1))
+p "Redis::lrange 0,1: " . join(",", Redis::lrange("demo:events", 0, 1))
+
+# ── Redis::lpop ──
+p "Redis::lpop: " . Redis::lpop("demo:events")
+p "Redis::lpop count=2: " . join(",", Redis::lpop("demo:events", count => 2))
+
+# ── Redis::rpop ──
+Redis::rpush("demo:events2", ["x", "y", "z"])
+p "Redis::rpop: " . Redis::rpop("demo:events2")
+p "Redis::rpop count=2: " . join(",", Redis::rpop("demo:events2", count => 2))
+
+# ── Redis::sadd ──
+Redis::sadd("demo:tags", ["rust", "stryke", "arrow"])
+p "Redis::sadd scard=" . Redis::scard("demo:tags")
+
+# ── Redis::smembers ──
+p "Redis::smembers: " . tag_join("demo:tags")
+
+# ── Redis::sismember ──
+p "Redis::sismember rust: " . Redis::sismember("demo:tags", "rust")
+p "Redis::sismember missing: " . Redis::sismember("demo:tags", "missing")
+
+# ── Redis::scard ──
+p "Redis::scard: " . Redis::scard("demo:tags")
+
+# ── Redis::srem ──
+Redis::srem("demo:tags", ["arrow"])
+p "Redis::srem scard: " . Redis::scard("demo:tags")
+
+# ── Redis::hset ──
+Redis::hset("demo:user", "name", "alice")
+p "Redis::hset name ok"
+
+# ── Redis::hmset ──
+Redis::hmset("demo:user", { age => 30, role => "admin" })
+p "Redis::hmset age+role ok"
+
+# ── Redis::hget ──
+p "Redis::hget name: " . Redis::hget("demo:user", "name")
+p "Redis::hget role: " . Redis::hget("demo:user", "role")
+
+# ── Redis::hgetall ──
+my ($u) = Redis::hgetall("demo:user")
+p "Redis::hgetall: name=$u->{name} role=$u->{role}"
+
+# ── Redis::hkeys ──
+p "Redis::hkeys: " . join(",", Redis::hkeys("demo:user"))
+
+# ── Redis::hvals ──
+p "Redis::hvals: " . join(",", Redis::hvals("demo:user"))
+
+# ── Redis::hmget ──
+p "Redis::hmget: " . join(",", Redis::hmget("demo:user", ["name", "age"]))
+
+# ── Redis::hdel ──
+Redis::hdel("demo:user", ["role"])
+p "Redis::hdel role gone: " . (Redis::hget("demo:user", "role") // "undef")
+
+# ── Redis::zadd ──
+Redis::zadd("demo:lb", { alice => 100, bob => 200, charlie => 150 })
+p "Redis::zadd zcard=" . Redis::zcard("demo:lb")
+
+# ── Redis::zrange ──
+my @lb = Redis::zrange("demo:lb", 0, -1, withscores => 1, rev => 1)
+p "Redis::zrange rev top: $lb[0]->{member}=$lb[0]->{score}"
+my @lb2 = Redis::zrange("demo:lb", 0, 1)
+p "Redis::zrange 0,1: " . join(",", @lb2)
+
+# ── Redis::zscore ──
+p "Redis::zscore bob: " . Redis::zscore("demo:lb", "bob")
+p "Redis::zscore missing: " . (Redis::zscore("demo:lb", "missing") // "undef")
+
+# ── Redis::zcard ──
+p "Redis::zcard: " . Redis::zcard("demo:lb")
+
+# ── Redis::zrem ──
+Redis::zrem("demo:lb", ["charlie"])
+p "Redis::zrem zcard: " . Redis::zcard("demo:lb")
+
+# ── Redis::publish ──
+p "Redis::publish subs: " . Redis::publish("demo:chan", "hello")
+p "Redis::publish again: " . Redis::publish("demo:chan", "world")
+
+# ── Redis::dbsize ──
+p "Redis::dbsize: " . Redis::dbsize()
+
+# ── Redis::info ──
+my ($mem) = Redis::info(section => "memory")
+p "Redis::info memory: $mem->{used_memory_human}"
+my ($srv) = Redis::info(section => "server")
+p "Redis::info server redis_version=$srv->{redis_version}"
+
+# ── Redis::raw ──
+my ($raw) = Redis::raw(["PING"])
+p "Redis::raw PING: " . to_json($raw)
+my ($raw2) = Redis::raw(["ECHO", "stryke"])
+p "Redis::raw ECHO: " . to_json($raw2)
+
+# ── Redis::del ──
+Redis::del([
+    "demo:greeting", "demo:a", "demo:b", "demo:c", "demo:counter",
+    "demo:nx-key", "demo:xx-key", "demo:events", "demo:events2",
+    "demo:tags", "demo:user", "demo:lb",
+])
+p "Redis::del cleanup ok"
+
+# Redis::flushdb intentionally skipped (destructive)
+
+p "done — exercised all non-destructive Redis public fns"

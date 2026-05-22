@@ -1,51 +1,161 @@
 #!/usr/bin/env stryke
-# demos/09_parquet.stk — stryke-parquet: write, inspect, head, stats, recompress.
+# demos/09_parquet.stk — exercises every public stryke-parquet API fn.
 #
 # Run:  s demos/09_parquet.stk
-# Deps: none — pure-Rust parquet via arrow-rs.
 
 use Arrow
 use Arrow::Parquet
 use Parquet
 
-p "── stryke-parquet demo ──"
-p Parquet::version()
+p "── stryke-parquet demo (full API) ──"
 
-my $tmp = "/tmp/stryke-demo-parquet"
+# ── Parquet::helper_path ──
+p "Parquet::helper_path " . Parquet::helper_path()
+
+# ── Parquet::ensure_built ──
+p "Parquet::ensure_built " . Parquet::ensure_built()
+
+# ── Parquet::version ──
+p "Parquet::version " . Parquet::version()
+
+my $tmp = "/tmp/stryke-demo-parquet-$$"
 mkdir $tmp unless -d $tmp
 my $path = "$tmp/people.parquet"
 
-# Build a small file with stryke-arrow then poke at it with stryke-parquet.
-my $batch = Arrow::batch(
-    id    => [1..10],
-    name  => ["alice", "bob", "charlie", "dana", "eve",
-              "frank", "grace", "henry", "iris", "jack"],
-    score => [98.5, 87.0, 91.2, 76.8, 100.0,
-              82.5, 95.0, 68.4, 88.9, 79.3],
-)
-Arrow::Parquet::write($path, $batch, compression => "zstd")
-p "wrote $path"
+my @rows = map {
+    { id => $_, name => (qw(alice bob charlie dana eve frank grace henry iris jack))[$_ - 1],
+      score => [98.5, 87.0, 91.2, 76.8, 100.0, 82.5, 95.0, 68.4, 88.9, 79.3]->[$_ - 1] }
+} (1..10)
+Arrow::Parquet::write($path, \@rows, compression => "zstd", row_group => 4)
 
-# Metadata-only inspect.
-my $info = Parquet::inspect $path
-p "inspect: rows=$info->{num_rows} groups=$info->{num_row_groups} cols=$info->{num_columns} size=$info->{file_size}"
+# ── Parquet::inspect ──
+my ($info) = Parquet::inspect $path
+p "Parquet::inspect rows=$info->{num_rows} groups=$info->{num_row_groups} size=$info->{file_size}"
 
-# Schema dump.
-my $sch = Parquet::schema $path
-p "schema:"
-for my $f (@{ $sch->{fields} }) {
-    p "  $f->{name}: $f->{type}"
+# ── Parquet::schema ──
+my ($sch) = Parquet::schema $path
+p "Parquet::schema #{len($sch->{fields})} fields"
+
+# ── Parquet::count ──
+p "Parquet::count " . Parquet::count($path)
+
+# ── Parquet::rowgroups ──
+my @rgs = Parquet::rowgroups($path)
+p "Parquet::rowgroups #{len(@rgs)} group(s)"
+
+# ── Parquet::stats ──
+my @all_stats = Parquet::stats $path
+p "Parquet::stats all #{len(@all_stats)} column(s)"
+my @id_stats = Parquet::stats($path, column => "id")
+p "Parquet::stats column=id min=$id_stats[0]->{min} max=$id_stats[0]->{max}"
+my @name_stats = Parquet::stats($path, column => "name")
+p "Parquet::stats column=name type=$name_stats[0]->{type}"
+
+# ── Parquet::head ──
+my @head = Parquet::head $path, n => 2, columns => ["id", "name"]
+p "Parquet::head n=2 columns=id,name #{len(@head)} row(s)"
+my @head2 = Parquet::head $path, n => 3
+p "Parquet::head n=3 all cols #{len(@head2)} row(s)"
+
+# ── Parquet::tail ──
+my @tail = Parquet::tail $path, n => 2
+p "Parquet::tail n=2 #{len(@tail)} row(s)"
+my @tail2 = Parquet::tail $path, n => 2, columns => ["name", "score"]
+p "Parquet::tail n=2 columns=name,score last=$tail2[0]->{name}"
+
+# ── Parquet::to_json ──
+my @all = Parquet::to_json $path
+p "Parquet::to_json all #{len(@all)} row(s)"
+my @subset = Parquet::to_json $path, columns => ["id", "score"]
+p "Parquet::to_json columns=id,score #{len(@subset)} row(s)"
+
+# ── Parquet::stream ──
+my $sn = Parquet::stream($path, callback => sub ($r) { 1 })
+p "Parquet::stream all $sn row(s)"
+my $sn2 = Parquet::stream($path, columns => ["name"],
+    callback => sub ($r) { 1 })
+p "Parquet::stream columns=name $sn2 row(s)"
+
+# ── Parquet::to_csv ──
+my $csv = Parquet::to_csv($path, columns => ["id", "name", "score"])
+p "Parquet::to_csv inline " . (split /\n/, $csv)[0] . " …"
+my $csv2 = Parquet::to_csv($path, columns => ["id", "name"])
+p "Parquet::to_csv columns=id,name lines=" . len([split /\n/, $csv2])
+my $csv_path = "$tmp/people.csv"
+Parquet::to_csv($path, output => $csv_path, columns => ["id", "name", "score"])
+p "Parquet::to_csv output=$csv_path size=" . (-s $csv_path)
+
+# ── Parquet::compress ──
+my $dst_snappy = "$tmp/people-snappy.parquet"
+my ($cmp) = Parquet::compress($path, $dst_snappy, codec => "snappy", row_group => 5)
+p "Parquet::compress snappy $cmp->{src_size} → $cmp->{dst_size} bytes"
+my $dst_gzip = "$tmp/people-gzip.parquet"
+my ($cmp2) = Parquet::compress($path, $dst_gzip, codec => "gzip", row_group => 3)
+p "Parquet::compress gzip $cmp2->{src_size} → $cmp2->{dst_size} bytes"
+my $dst_zstd = "$tmp/people-zstd.parquet"
+my ($cmp3) = Parquet::compress($path, $dst_zstd, codec => "zstd")
+p "Parquet::compress zstd default row_group"
+my $dst_lz4 = "$tmp/people-lz4.parquet"
+my ($cmp4) = Parquet::compress($path, $dst_lz4, codec => "lz4", row_group => 2)
+p "Parquet::compress lz4 row_group=2 $cmp4->{src_size} → $cmp4->{dst_size} bytes"
+
+# ── Parquet::head (extra columns variant) ──
+my @head3 = Parquet::head $path, n => 1, columns => ["score"]
+p "Parquet::head n=1 columns=score max=$head3[0]->{score}"
+
+# ── Parquet::tail (extra n variant) ──
+my @tail3 = Parquet::tail $path, n => 3, columns => ["id"]
+p "Parquet::tail n=3 columns=id last_id=$tail3[-1]->{id}"
+
+# ── Parquet::to_json (name column only) ──
+my @names_json = Parquet::to_json $path, columns => ["name"]
+p "Parquet::to_json columns=name #{len(@names_json)} row(s)"
+
+# ── Parquet::stream (score filter via callback) ──
+my $hi = 0
+Parquet::stream($path, columns => ["score"],
+    callback => sub ($r) { $hi++ if $r->{score} > 90 })
+p "Parquet::stream score>90 count=$hi"
+
+# ── Parquet::inspect (post-compress compare) ──
+my ($info2) = Parquet::inspect $dst_snappy
+p "Parquet::inspect snappy rows=$info2->{num_rows} ratio=$info2->{compression_ratio}"
+
+# ── Parquet::rowgroups (per-group detail) ──
+for my $rg (@rgs) {
+    p "  rowgroup ordinal=$rg->{ordinal} rows=$rg->{num_rows} cols=#{len($rg->{columns} // [])}"
 }
 
-# Head 3 rows.
-my @rows = Parquet::head $path, n => 3
-p "head:"
-p "  " . to_json($_) for @rows
+# ── Parquet::count (re-verify after compress) ──
+p "Parquet::count snappy copy " . Parquet::count($dst_snappy)
 
-# Per-column stats.
-my @stats = Parquet::stats $path
-p "stats:"
-for my $s (@stats) {
-    p "  $s->{name}: nulls=" . ($s->{null_count} // 0) .
-      " min=" . to_json($s->{min}) . " max=" . to_json($s->{max})
+# ── Parquet::schema (re-read compressed) ──
+my ($sch2) = Parquet::schema $dst_snappy
+p "Parquet::schema snappy #{len($sch2->{fields})} fields"
+
+# ── Parquet::to_csv (all columns inline) ──
+my $csv_all = Parquet::to_csv($path)
+p "Parquet::to_csv all columns bytes=" . length($csv_all)
+
+# ── Parquet::stats (score column) ──
+my @score_stats = Parquet::stats($path, column => "score")
+p "Parquet::stats column=score nulls=$score_stats[0]->{null_count}"
+
+# ── Parquet::head (n=5) ──
+my @head5 = Parquet::head $path, n => 5, columns => ["id", "score"]
+p "Parquet::head n=5 id+score #{len(@head5)} rows"
+
+# ── Parquet::tail (n=1) ──
+my @tail1 = Parquet::tail $path, n => 1
+p "Parquet::tail n=1 name=$tail1[0]->{name}"
+
+# ── Parquet::stream (id column) ──
+my $id_n = Parquet::stream($path, columns => ["id"],
+    callback => sub ($r) { 1 })
+p "Parquet::stream columns=id $id_n rows"
+
+for my $f (glob("$tmp/*")) {
+    unlink $f if -f $f
 }
+rmdir $tmp if -d $tmp
+p "done"

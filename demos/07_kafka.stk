@@ -1,46 +1,178 @@
 #!/usr/bin/env stryke
-# demos/07_kafka.stk — stryke-kafka: produce + consume + admin + lag.
+# demos/07_kafka.stk — exercises every public stryke-kafka API fn.
 #
 # Run:  KAFKA_BROKERS=localhost:9092 s demos/07_kafka.stk
-# Live: docker run --rm -p9092:9092 \
-#         -e KAFKA_CFG_NODE_ID=0 \
-#         -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
-#         -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@127.0.0.1:9093 \
-#         -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
-#         -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092 \
-#         -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT \
-#         -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
-#         bitnami/kafka:3.9
 
 use Kafka
 
-p "── stryke-kafka demo ──"
-p Kafka::version()
-exit 1 unless Kafka::ping()
+p "── stryke-kafka demo (full API) ──"
 
+# ── Kafka::helper_path ──
+p "Kafka::helper_path " . Kafka::helper_path()
+
+# ── Kafka::ensure_built ──
+p "Kafka::ensure_built " . Kafka::ensure_built()
+
+# ── Kafka::version ──
+p "Kafka::version " . Kafka::version()
+
+# ── Kafka::ping ──
+exit 1 unless Kafka::ping()
+p "Kafka::ping ok"
+
+# ── Kafka::cluster ──
+my ($cl) = Kafka::cluster()
+p "Kafka::cluster brokers=$cl->{broker_count} topics=$cl->{topic_count}"
+
+# ── Kafka::topics ──
+my @before = Kafka::topics()
+p "Kafka::topics #{len(@before)} before create"
+
+# ── Kafka::create_topic ──
 my $topic = "stryke-demo-$$"
 Kafka::create_topic $topic, partitions => 3, replication => 1
+p "Kafka::create_topic $topic partitions=3 replication=1"
+my $topic2 = "$topic-stream"
+Kafka::create_topic $topic2, partitions => 1, replication => 1,
+    configs => { "retention.ms" => "60000" }
+p "Kafka::create_topic $topic2 partitions=1 configs retention.ms"
 
-# Produce 5 messages.
-for my $i (1..5) {
-    my $r = Kafka::produce $topic, "msg-$i", key => "k$i"
-    p "  produced $r->{topic}/$r->{partition}\@$r->{offset}"
+# ── Kafka::describe ──
+my ($info) = Kafka::describe $topic
+p "Kafka::describe partitions=$info->{partition_count}"
+my ($info2) = Kafka::describe $topic2
+p "Kafka::describe stream topic partitions=$info2->{partition_count}"
+
+# ── Kafka::produce ──
+for my $i (1..2) {
+    my ($r) = Kafka::produce($topic, "single-$i",
+        key     => "k$i",
+        headers => { trace => "demo", seq => "$i" },
+    )
+    p "  Kafka::produce partition=$r->{partition} offset=$r->{offset}"
 }
+my ($r3) = Kafka::produce($topic, "partitioned", key => "fixed", partition => 0)
+p "Kafka::produce partition=0 $r3->{partition}\@$r3->{offset}"
 
-# Consume them back.
+# ── Kafka::produce_many ──
+my ($pm) = Kafka::produce_many([
+    { value => "bulk-a", key => "ka" },
+    { value => "bulk-b", key => "kb", headers => { batch => "1" } },
+], default_topic => $topic, limit => 10)
+p "Kafka::produce_many sent=$pm->{sent}"
+
+my $grp = "stryke-demo-$$"
+
+# ── Kafka::consume ──
 my @msgs = Kafka::consume $topic,
-    group        => "stryke-demo-$$",
+    group        => $grp,
+    offset_reset => "earliest",
+    max          => 10,
+    idle_ms      => 5_000
+p "Kafka::consume earliest max=10 ${\ len(@msgs)} messages"
+
+Kafka::produce $topic2, "stream-1"
+Kafka::produce $topic2, "stream-2"
+my $grp2 = "$grp-stream"
+my @msgs2 = Kafka::consume $topic2,
+    group        => $grp2,
+    offset_reset => "latest",
+    max          => 5,
+    idle_ms      => 3_000,
+    commit       => 1
+p "Kafka::consume latest commit=1 ${\ len(@msgs2)} messages"
+
+# ── Kafka::consume_stream ──
+Kafka::produce $topic2, "stream-callback-1"
+Kafka::produce $topic2, "stream-callback-2"
+my $grp3 = "$grp-stream-cb"
+my $cs = Kafka::consume_stream($topic2,
+    group        => $grp3,
     offset_reset => "earliest",
     max          => 5,
-    idle_ms      => 5_000
-p "consumed ${\ len(@msgs)} messages"
-for my $m (@msgs) {
-    p "  $m->{partition}.$m->{offset} $m->{key} → $m->{value}"
+    idle_ms      => 5_000,
+    callback     => sub ($m) { p "  stream: $m->{value}" })
+p "Kafka::consume_stream $cs messages"
+my $cs2 = Kafka::consume_stream($topic,
+    group        => "$grp-cb2",
+    offset_reset => "earliest",
+    max          => 3,
+    idle_ms      => 3_000,
+    value_mode   => "string",
+    callback     => sub ($m) { 1 })
+p "Kafka::consume_stream value_mode=string $cs2 messages"
+
+# ── Kafka::groups ──
+my @groups = Kafka::groups()
+p "Kafka::groups #{len(@groups)} (incl. $grp)"
+
+# ── Kafka::lag ──
+my @lag = Kafka::lag($grp, topic => $topic)
+my $total_lag = 0
+for my $r (@lag) {
+    if (defined $r->{total_lag}) {
+        $total_lag = $r->{total_lag}
+        next
+    }
+    p "  lag p$r->{partition}: $r->{lag}" if defined $r->{lag}
 }
+p "Kafka::lag topic=$topic total=$total_lag"
+my @lag2 = Kafka::lag($grp2)
+p "Kafka::lag all topics #{len(@lag2)} partition rows"
 
-# Topic metadata.
-my $info = Kafka::describe $topic
-p "describe: $info->{partition_count} partitions"
+# ── Kafka::produce (partition explicit) ──
+my ($rp) = Kafka::produce($topic, "late-msg", key => "late", partition => 1)
+p "Kafka::produce partition=1 offset=$rp->{offset}"
 
+# ── Kafka::produce_many (ack_timeout) ──
+my ($pm2) = Kafka::produce_many([
+    { value => "bulk-c", key => "kc" },
+], default_topic => $topic, ack_timeout_ms => 5000, limit => 5)
+p "Kafka::produce_many ack_timeout sent=$pm2->{sent}"
+
+# ── Kafka::consume (value_mode) ──
+my @msgs3 = Kafka::consume($topic,
+    group        => "$grp-vm",
+    offset_reset => "earliest",
+    max          => 3,
+    idle_ms      => 3_000,
+    value_mode   => "string",
+)
+p "Kafka::consume value_mode=string ${\ len(@msgs3)} messages"
+
+# ── Kafka::cluster (re-check after traffic) ──
+my ($cl2) = Kafka::cluster()
+p "Kafka::cluster after traffic topics=$cl2->{topic_count}"
+
+# ── Kafka::topics (after create) ──
+my @after = Kafka::topics()
+p "Kafka::topics #{len(@after)} after demo topics"
+
+# ── Kafka::groups (stream groups) ──
+p "Kafka::groups includes $grp2: " .
+    (grep { (ref($_) eq "HASH" ? ($_->{name} // "") : $_) eq $grp2 } @groups ? "yes" : "maybe")
+
+# ── Kafka::describe (re-read main topic) ──
+my ($info3) = Kafka::describe($topic)
+p "Kafka::describe pre-delete partitions=$info3->{partition_count}"
+
+# ── Kafka::produce_many (limit) ──
+my ($pm3) = Kafka::produce_many([
+    { value => "bulk-d", key => "kd" },
+    { value => "bulk-e", key => "ke" },
+], default_topic => $topic, limit => 2)
+p "Kafka::produce_many limit=2 sent=$pm3->{sent}"
+
+# ── Kafka::consume (commit variant) ──
+my @msgs4 = Kafka::consume($topic,
+    group => "$grp-commit", offset_reset => "earliest",
+    max => 2, idle_ms => 3_000, commit => 1,
+)
+p "Kafka::consume commit=1 ${\ len(@msgs4)} messages"
+
+# ── Kafka::delete_topic ──
 Kafka::delete_topic $topic
-p "cleaned up"
+Kafka::delete_topic $topic2
+p "Kafka::delete_topic cleaned up"
+
+p "done"
