@@ -1,11 +1,42 @@
-# stryke-demo
+```
+ ███████╗████████╗██████╗ ██╗   ██╗██╗  ██╗███████╗
+ ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██║ ██╔╝██╔════╝
+ ███████╗   ██║   ██████╔╝ ╚████╔╝ █████╔╝ █████╗
+ ╚════██║   ██║   ██╔══██╗  ╚██╔╝  ██╔═██╗ ██╔══╝
+ ███████║   ██║   ██║  ██║   ██║   ██║  ██╗███████╗
+ ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝
+                   [ d e m o ]
+```
+
+[![CI](https://github.com/MenkeTechnologies/stryke-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/MenkeTechnologies/stryke-demo/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![stryke](https://img.shields.io/badge/stryke-package-cyan.svg)](https://github.com/MenkeTechnologies/strykelang)
+
+### `[LIVE DEMOS FOR EVERY STRYKE-* PACKAGE]`
+
+> *"Fourteen packages, one pull."*
 
 Live demos for every package in the stryke-* family. One `s install`
 pulls all fourteen from GitHub; each demo is a standalone `.stk` script.
 
-Created by MenkeTechnologies.
+### [`strykelang`](https://github.com/MenkeTechnologies/strykelang) &middot; [`MenkeTechnologiesMeta`](https://github.com/MenkeTechnologies/MenkeTechnologiesMeta) · [`stryke-arrow`](https://github.com/MenkeTechnologies/stryke-arrow) · [`stryke-aws`](https://github.com/MenkeTechnologies/stryke-aws) · [`stryke-docker`](https://github.com/MenkeTechnologies/stryke-docker) · [`stryke-kafka`](https://github.com/MenkeTechnologies/stryke-kafka)
 
-## Packages exercised
+---
+
+## Table of Contents
+
+- [\[0x00\] Packages exercised](#0x00-packages-exercised)
+- [\[0x01\] Install](#0x01-install)
+- [\[0x02\] Spin up all live services](#0x02-spin-up-all-live-services)
+- [\[0x03\] Run a single demo](#0x03-run-a-single-demo)
+- [\[0x04\] Run everything available](#0x04-run-everything-available)
+- [\[0x05\] Layout](#0x05-layout)
+- [\[0x06\] Updating dep pins](#0x06-updating-dep-pins)
+- [\[0xFF\] License](#0xff-license)
+
+---
+
+## [0x00] Packages exercised
 
 | # | Package | Demo | Service needed |
 |---|---|---|---|
@@ -24,7 +55,7 @@ Created by MenkeTechnologies.
 | 13 | [stryke-k8s](https://github.com/MenkeTechnologies/stryke-k8s)           | `demos/13_k8s.stk`      | Kubernetes 1.24+ (kind / k3s / cloud) |
 | 14 | [stryke-docker](https://github.com/MenkeTechnologies/stryke-docker)     | `demos/14_docker.stk`   | Docker daemon (Desktop / dockerd / DOCKER_HOST) |
 
-## Install
+## [0x01] Install
 
 ```sh
 git clone https://github.com/MenkeTechnologies/stryke-demo
@@ -36,7 +67,7 @@ s install         # pulls all 14 packages from GitHub, builds helpers
 binary into the global stryke store, and locks the graph in
 `stryke.lock`. No per-demo install needed.
 
-## Spin up all live services
+## [0x02] Spin up all live services
 
 `docker-compose.yml` ships MySQL, Postgres, Redis, Mongo, Kafka (KRaft
 mode), LocalStack, and a single-node k3s cluster so you can exercise
@@ -48,7 +79,7 @@ make all                 # auto-detects which services are reachable
 make down                # tear down + clear volumes
 ```
 
-## Run a single demo
+## [0x03] Run a single demo
 
 ```sh
 make arrow               # in-process; no services
@@ -75,7 +106,7 @@ Or invoke directly:
 MONGODB_URI=mongodb://localhost s demos/12_mongo.stk
 ```
 
-## Run everything available
+## [0x04] Run everything available
 
 ```sh
 s demos/run_all.stk
@@ -85,7 +116,7 @@ s demos/run_all.stk
 service answers. The rest print `SKIP` and the runner moves on. Safe to
 run against any subset of services.
 
-## Layout
+## [0x05] Layout
 
 ```
 stryke-demo/
@@ -110,12 +141,12 @@ stryke-demo/
     run_all.stk              # ping each service, run only the reachable demos
 ```
 
-## Updating dep pins
+## [0x06] Updating dep pins
 
 `stryke.toml` pins each of the 14 packages to `branch = "main"`. When
 the packages start cutting `vX.Y.Z` tags, swap to `tag = "vX.Y.Z"` for
 reproducible installs and rerun `s install` to refresh `stryke.lock`.
 
-## License
+## [0xFF] License
 
 MIT.
