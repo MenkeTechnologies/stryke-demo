@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="stryke-demo — live demos for all 14 stryke-* connector packages. One `s install` pulls them all from GitHub; each demo is a standalone .stk script. Includes docker-compose.yml for the live services (MySQL, Postgres, Kafka, Redis, MongoDB, LocalStack, gRPC server).">
+  <title>stryke-demo — Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&amp;family=Share+Tech+Mono&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="hud-static.css">
+  <link rel="stylesheet" href="tutorial.css">
+  <style>
+    .tutorial-main { max-width: 68rem; }
+    .docs-build-line {
+      margin: 0.35rem 0 0;
+      font-family: 'Share Tech Mono', ui-monospace, monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+      max-width: 42rem;
+      opacity: 0.75;
+    }
+    .hub-scheme-strip {
+      border-bottom: 1px dashed var(--border);
+      background: color-mix(in srgb, var(--bg-secondary) 85%, transparent);
+      padding: 0.55rem 1.5rem 0.65rem;
+      position: relative;
+    }
+    .hub-scheme-strip-inner {
+      max-width: 68rem;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+    .hub-scheme-strip .hud-scheme-label {
+      flex: 0 0 auto;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-align: left;
+    }
+    .hub-scheme-strip .scheme-grid {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+    @media (max-width: 720px) {
+      .hub-scheme-strip-inner { flex-direction: column; align-items: stretch; }
+      .hub-scheme-strip .scheme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .demo-tbl { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 12.5px; }
+    .demo-tbl th {
+      background: var(--bg-secondary);
+      color: var(--cyan);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+    }
+    .demo-tbl td { padding: 6px 10px; border: 1px solid var(--border); color: var(--text-dim); vertical-align: top; }
+    .demo-tbl td code { color: var(--accent-light); background: var(--bg); padding: 1px 4px; font-size: 11.5px; }
+    .demo-tbl td.svc-none { color: var(--green); font-weight: 700; }
+    .demo-tbl td.svc-local { color: var(--cyan); }
+    .demo-tbl td.svc-cloud { color: var(--yellow); }
+  </style>
+</head>
+<body>
+  <div class="app tutorial-app" id="docsApp">
+    <div class="crt-scanline" id="crtH" aria-hidden="true"></div>
+    <div class="crt-scanline-v" id="crtV" aria-hidden="true"></div>
+
+    <header class="tutorial-header">
+      <div class="tutorial-header-inner">
+        <div>
+          <h1 class="tutorial-brand">// STRYKE-DEMO &mdash; LIVE DEMOS FOR EVERY STRYKE-* PACKAGE</h1>
+          <nav class="tutorial-crumbs" aria-label="Breadcrumb">
+            <span class="current">Docs</span>
+            <span class="sep">/</span>
+            <a href="report.html">Engineering report</a>
+            <span class="sep">/</span>
+            <a href="https://github.com/MenkeTechnologies/stryke-demo" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <span class="sep">/</span>
+            <a href="https://github.com/MenkeTechnologies/strykelang" target="_blank" rel="noopener noreferrer">strykelang</a>
+            <span class="sep">/</span>
+            <a href="https://github.com/MenkeTechnologies/MenkeTechnologiesMeta" target="_blank" rel="noopener noreferrer">Meta</a>
+          </nav>
+          <p class="docs-build-line">14 demos · one .stk script per stryke-* connector · docker-compose for the live services · <code>make run-all</code> runs every demo whose service is reachable</p>
+        </div>
+        <div class="tutorial-toolbar">
+          <button type="button" class="btn btn-secondary" id="btnTheme" title="Toggle light/dark">Theme</button>
+          <button type="button" class="btn btn-secondary active" id="btnCrt" title="CRT scanline overlay">CRT</button>
+          <button type="button" class="btn btn-secondary active" id="btnNeon" title="Neon border pulse">Neon</button>
+          <a class="btn btn-secondary" href="report.html">Report</a>
+          <a class="btn btn-secondary" href="https://github.com/MenkeTechnologies/stryke-demo" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a class="btn btn-secondary" href="https://github.com/MenkeTechnologies/stryke-demo/issues" target="_blank" rel="noopener noreferrer">Issues</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="hub-scheme-strip">
+      <div class="hub-scheme-strip-inner">
+        <span class="hud-scheme-label">// Color scheme</span>
+        <div class="scheme-grid" id="hudSchemeGrid"></div>
+      </div>
+    </div>
+
+    <main class="tutorial-main">
+      <h2 class="tutorial-title"><span class="step-hash">&gt;_</span>STRYKE-DEMO</h2>
+      <p class="tutorial-subtitle"><strong>Fourteen packages, one pull.</strong> Live runnable demos for every <code>stryke-*</code> connector in the family &mdash; <a href="https://github.com/MenkeTechnologies/stryke-arrow">arrow</a>, <a href="https://github.com/MenkeTechnologies/stryke-aws">aws</a>, <a href="https://github.com/MenkeTechnologies/stryke-docker">docker</a>, <a href="https://github.com/MenkeTechnologies/stryke-duckdb">duckdb</a>, <a href="https://github.com/MenkeTechnologies/stryke-gcp">gcp</a>, <a href="https://github.com/MenkeTechnologies/stryke-grpc">grpc</a>, <a href="https://github.com/MenkeTechnologies/stryke-k8s">k8s</a>, <a href="https://github.com/MenkeTechnologies/stryke-kafka">kafka</a>, <a href="https://github.com/MenkeTechnologies/stryke-mongo">mongo</a>, <a href="https://github.com/MenkeTechnologies/stryke-mysql">mysql</a>, <a href="https://github.com/MenkeTechnologies/stryke-parquet">parquet</a>, <a href="https://github.com/MenkeTechnologies/stryke-postgres">postgres</a>, <a href="https://github.com/MenkeTechnologies/stryke-redis">redis</a>, <a href="https://github.com/MenkeTechnologies/stryke-spark">spark</a>. One <code>s install</code> pulls them all from GitHub; each demo is a standalone <code>.stk</code> script you can run directly. <code>docker-compose.yml</code> spins up every live service used by the demos.</p>
+
+      <section class="tutorial-section">
+        <h2>The 14 demos</h2>
+        <table class="demo-tbl">
+          <thead>
+            <tr><th>#</th><th>Package</th><th>Demo file</th><th>Service needed</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td><a href="https://github.com/MenkeTechnologies/stryke-arrow">stryke-arrow</a></td><td><code>demos/01_arrow.stk</code></td><td class="svc-none">none (in-process)</td></tr>
+            <tr><td>2</td><td><a href="https://github.com/MenkeTechnologies/stryke-mysql">stryke-mysql</a></td><td><code>demos/02_mysql.stk</code></td><td class="svc-local">MySQL 5.7+ / MariaDB</td></tr>
+            <tr><td>3</td><td><a href="https://github.com/MenkeTechnologies/stryke-postgres">stryke-postgres</a></td><td><code>demos/03_postgres.stk</code></td><td class="svc-local">Postgres 12+</td></tr>
+            <tr><td>4</td><td><a href="https://github.com/MenkeTechnologies/stryke-spark">stryke-spark</a></td><td><code>demos/04_spark.stk</code></td><td class="svc-none">none (embedded)</td></tr>
+            <tr><td>5</td><td><a href="https://github.com/MenkeTechnologies/stryke-aws">stryke-aws</a></td><td><code>demos/05_aws.stk</code></td><td class="svc-local">LocalStack or real AWS</td></tr>
+            <tr><td>6</td><td><a href="https://github.com/MenkeTechnologies/stryke-gcp">stryke-gcp</a></td><td><code>demos/06_gcp.stk</code></td><td class="svc-cloud">real GCP (ADC)</td></tr>
+            <tr><td>7</td><td><a href="https://github.com/MenkeTechnologies/stryke-kafka">stryke-kafka</a></td><td><code>demos/07_kafka.stk</code></td><td class="svc-local">Kafka broker</td></tr>
+            <tr><td>8</td><td><a href="https://github.com/MenkeTechnologies/stryke-grpc">stryke-grpc</a></td><td><code>demos/08_grpc.stk</code></td><td class="svc-local">reflection-enabled gRPC server</td></tr>
+            <tr><td>9</td><td><a href="https://github.com/MenkeTechnologies/stryke-parquet">stryke-parquet</a></td><td><code>demos/09_parquet.stk</code></td><td class="svc-none">none (in-process)</td></tr>
+            <tr><td>10</td><td><a href="https://github.com/MenkeTechnologies/stryke-duckdb">stryke-duckdb</a></td><td><code>demos/10_duckdb.stk</code></td><td class="svc-none">none (embedded)</td></tr>
+            <tr><td>11</td><td><a href="https://github.com/MenkeTechnologies/stryke-redis">stryke-redis</a></td><td><code>demos/11_redis.stk</code></td><td class="svc-local">Redis 6+</td></tr>
+            <tr><td>12</td><td><a href="https://github.com/MenkeTechnologies/stryke-mongo">stryke-mongo</a></td><td><code>demos/12_mongo.stk</code></td><td class="svc-local">MongoDB 5+</td></tr>
+            <tr><td>13</td><td><a href="https://github.com/MenkeTechnologies/stryke-k8s">stryke-k8s</a></td><td><code>demos/13_k8s.stk</code></td><td class="svc-local">Kubernetes 1.24+ (kind / k3s / cloud)</td></tr>
+            <tr><td>14</td><td><a href="https://github.com/MenkeTechnologies/stryke-docker">stryke-docker</a></td><td><code>demos/14_docker.stk</code></td><td class="svc-local">Docker daemon (Desktop / dockerd / DOCKER_HOST)</td></tr>
+          </tbody>
+        </table>
+        <p>Color legend: <span style="color:var(--green);font-weight:700">green = no service required</span> · <span style="color:var(--cyan)">cyan = local docker-compose can host it</span> · <span style="color:var(--yellow)">yellow = real cloud creds required</span>.</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Install</h2>
+<pre># clone + bootstrap with stryke's package manager
+git clone https://github.com/MenkeTechnologies/stryke-demo
+cd stryke-demo
+s install            # pulls all 14 stryke-* packages from GitHub
+
+# verify each demo is runnable
+make check</pre>
+        <p><code>s install</code> resolves the package set declared in <code>stryke.toml</code> and clones each <code>stryke-*</code> repo into stryke's package store. Each demo script imports its package by name (no path indirection).</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Spin up all live services</h2>
+<pre># bring up MySQL, Postgres, Kafka, Redis, MongoDB, LocalStack, gRPC server
+docker compose up -d
+
+# verify everything is healthy
+docker compose ps
+make services-up     # convenience wrapper
+
+# tear down
+docker compose down</pre>
+        <p><code>docker-compose.yml</code> ships every dependency the in-tree demos need: MySQL, Postgres, Kafka (broker + zookeeper), Redis, MongoDB, LocalStack (S3 + DynamoDB + SQS + Lambda + STS), and a reflection-enabled gRPC test server. The Spark, Arrow, Parquet, and DuckDB demos run embedded &mdash; no docker required.</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Run a single demo</h2>
+<pre># direct stryke invocation
+stryke demos/01_arrow.stk
+stryke demos/10_duckdb.stk
+stryke demos/13_k8s.stk
+
+# or via make (handles env vars per demo)
+make run-arrow
+make run-mysql
+make run-redis</pre>
+        <p>Each demo prints what it's doing as it goes &mdash; nothing magic, nothing hidden. Read the <code>.stk</code> file to see exactly which package functions are being exercised.</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Run everything available</h2>
+<pre># probe each service, skip demos whose dependency is unreachable
+make run-all
+
+# or the raw stryke entrypoint that does the probing
+stryke demos/run_all.stk</pre>
+        <p><code>run_all.stk</code> probes each live service on its expected port and skips demos whose dependency isn't up. The in-process demos (<code>arrow</code>, <code>spark</code>, <code>parquet</code>, <code>duckdb</code>) always run. Output is a summary table showing which demos succeeded vs were skipped vs failed.</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Layout</h2>
+<pre>stryke-demo/
+&#9500;&#9472;&#9472; demos/
+&#9474;   &#9500;&#9472;&#9472; 01_arrow.stk        # arrow / parquet / feather columnar I/O
+&#9474;   &#9500;&#9472;&#9472; 02_mysql.stk        # CRUD + bind params + NDJSON export
+&#9474;   &#9500;&#9472;&#9472; 03_postgres.stk     # same shape as mysql
+&#9474;   &#9500;&#9472;&#9472; 04_spark.stk        # Spark Connect (no JVM)
+&#9474;   &#9500;&#9472;&#9472; 05_aws.stk          # S3 + DynamoDB against LocalStack
+&#9474;   &#9500;&#9472;&#9472; 06_gcp.stk          # GCS + Pub/Sub
+&#9474;   &#9500;&#9472;&#9472; 07_kafka.stk        # produce + consume + admin
+&#9474;   &#9500;&#9472;&#9472; 08_grpc.stk         # reflection-driven list + call
+&#9474;   &#9500;&#9472;&#9472; 09_parquet.stk      # schema + stats + head + recompress
+&#9474;   &#9500;&#9472;&#9472; 10_duckdb.stk       # direct parquet/csv query without import
+&#9474;   &#9500;&#9472;&#9472; 11_redis.stk        # KV + lists + hashes + pub/sub
+&#9474;   &#9500;&#9472;&#9472; 12_mongo.stk        # find + aggregation + index admin
+&#9474;   &#9500;&#9472;&#9472; 13_k8s.stk          # get + apply + scale + logs
+&#9474;   &#9500;&#9472;&#9472; 14_docker.stk       # ps + logs + exec + events
+&#9474;   &#9492;&#9472;&#9472; run_all.stk         # probe services + run reachable demos
+&#9500;&#9472;&#9472; docker-compose.yml      # MySQL / Postgres / Kafka / Redis / Mongo / LocalStack / gRPC
+&#9500;&#9472;&#9472; Makefile                # `make run-*`, `services-up`, `check`, `run-all`
+&#9500;&#9472;&#9472; stryke.toml             # package manifest (declares the 14 deps)
+&#9492;&#9472;&#9472; docs/                   # this site (GitHub Pages)</pre>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Updating dep pins</h2>
+        <p>The <code>stryke.toml</code> pins each <code>stryke-*</code> package to a git ref. To pull every dep to its tip:</p>
+<pre>s update          # refresh git refs and re-resolve
+make check        # verify all demos still parse</pre>
+      </section>
+
+    </main>
+  </div>
+  <script src="hud-theme.js"></script>
+</body>
+</html>
