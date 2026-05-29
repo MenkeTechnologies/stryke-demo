@@ -22,7 +22,7 @@ jobs:
     name: Validate stryke.toml
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Parse stryke.toml
         run: |
           python3 - <<'PY'
@@ -49,7 +49,7 @@ jobs:
     name: Validate demo layout
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Each package has exactly one demo
         run: |
           set -euo pipefail
@@ -88,7 +88,7 @@ jobs:
     name: Validate Makefile targets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: All 14 per-package make targets present
         run: |
           set -euo pipefail
@@ -102,7 +102,7 @@ jobs:
     name: Validate docker-compose.yml
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: docker compose config
         run: docker compose -f docker-compose.yml config >/dev/null
       - name: All seven service containers present
