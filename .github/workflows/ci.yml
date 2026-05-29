@@ -112,3 +112,15 @@ jobs:
               docker compose -f docker-compose.yml config --services | grep -qx "$svc" \
                   || { echo "missing service: $svc"; exit 1; }
           done
+
+  repo-contract:
+    name: Repo-contract (demos / Makefile parity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run tests/repo-contract.sh
+        # Pins every demos/*.stk file non-empty + Makefile has a
+        # target for each demo (catches drift between demos/ and
+        # `make all`).
+        run: bash tests/repo-contract.sh
