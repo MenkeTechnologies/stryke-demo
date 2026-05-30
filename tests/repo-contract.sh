@@ -61,13 +61,59 @@ fi
 # `make arrow` that collides with a real file in cwd would silently skip.
 phony_line=$(grep -E "^\.PHONY:" Makefile | head -1)
 phony_missing=""
-for target in install up down all arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo k8s docker; do
+for target in install up down all clean arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo k8s docker; do
     grep -qE "\\b${target}\\b" <<<"$phony_line" || phony_missing="$phony_missing $target"
 done
 if [[ -z "$phony_missing" ]]; then
-    echo "PASS  all 18 Makefile targets declared .PHONY (file-collision safe)"
+    echo "PASS  all 19 Makefile targets declared .PHONY (file-collision safe)"
 else
     echo "FAIL  .PHONY missing:$phony_missing"
+    ok=0
+fi
+
+# Every demo's first non-comment, non-blank line must be a `use ` directive.
+# stryke files load packages via `use Foo` (Perl-sigil-inheritance style); a
+# demo that opens with `sub`, `my`, or a function call is mis-structured —
+# the connector packages won't be in scope when the demo runs.
+non_use=0
+non_use_examples=()
+while IFS= read -r f; do
+    # First line that isn't blank, isn't a comment, and isn't a shebang.
+    first=$(awk 'NF && $1 !~ /^#/ {print; exit}' "$f")
+    if [[ -z "$first" ]]; then
+        echo "FAIL  $f has no executable lines"
+        non_use=$((non_use + 1))
+        ok=0
+    elif [[ "$first" != use\ * ]]; then
+        non_use=$((non_use + 1))
+        [[ "${#non_use_examples[@]}" -lt 3 ]] && non_use_examples+=("${f##*/}: '${first}'")
+        ok=0
+    fi
+done < <(find demos -maxdepth 1 -name "*.stk" -type f ! -name "run_all.stk" 2>/dev/null)
+if [[ $non_use -eq 0 ]]; then
+    echo "PASS  every demo opens with a 'use ' directive (excl. run_all.stk)"
+else
+    echo "FAIL  $non_use demo(s) don't open with 'use ' (e.g. ${non_use_examples[*]})"
+fi
+
+# The Makefile `clean` target must mention the generated-artifact paths
+# from .gitignore (target/, tmp/, stryke.lock). A `clean` that says
+# `rm -rf *` would explode demos/; a `clean` that doesn't touch the
+# ignored paths leaves stale bytecode that breaks the next build.
+clean_recipe=$(awk '/^clean:/,/^$/' Makefile | grep -v "^clean:")
+clean_missing=""
+for path in target tmp stryke.lock; do
+    grep -qE "\\b${path}\\b" <<<"$clean_recipe" || clean_missing="$clean_missing $path"
+done
+if grep -q "^clean:" Makefile; then
+    if [[ -z "$clean_missing" ]]; then
+        echo "PASS  Makefile clean target removes target/, tmp/, stryke.lock"
+    else
+        echo "FAIL  Makefile clean missing paths:$clean_missing"
+        ok=0
+    fi
+else
+    echo "FAIL  Makefile has no clean target"
     ok=0
 fi
 

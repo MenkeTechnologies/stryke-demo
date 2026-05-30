@@ -1,7 +1,12 @@
-.PHONY: install up down all arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo k8s docker
+.PHONY: install up down all clean arrow mysql postgres spark aws gcp kafka grpc parquet duckdb redis mongo k8s docker
 
 install:
 	s install
+
+# Remove generated artifacts — same set as .gitignore (target/, tmp/,
+# stryke.lock). Safe to run anytime; never touches demos/ or docs/.
+clean:
+	rm -rf target tmp stryke.lock
 
 up:
 	docker compose up -d
