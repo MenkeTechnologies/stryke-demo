@@ -13,6 +13,7 @@ use Mongo
 use K8s
 use Docker
 use AWS::STS
+use GCP
 use Grpc
 
 sub run_demo ($label, $reachable, $path) {
