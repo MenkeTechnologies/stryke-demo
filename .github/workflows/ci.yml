@@ -124,3 +124,12 @@ jobs:
         # target for each demo (catches drift between demos/ and
         # `make all`).
         run: bash tests/repo-contract.sh
+
+  docs-gates:
+    name: Docs gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash tests/docs-target-blank-rel-noopener.sh
+      - run: bash tests/docs-no-http-links.sh
+      - run: bash tests/docs-no-inline-handlers.sh
