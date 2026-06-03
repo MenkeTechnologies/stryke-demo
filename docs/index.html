@@ -159,7 +159,7 @@ make check</pre>
 
       <section class="tutorial-section">
         <h2>Spin up all live services</h2>
-<pre># bring up MySQL, Postgres, Kafka, Redis, MongoDB, LocalStack, gRPC server
+<pre># bring up MySQL, Postgres, Kafka, Redis, MongoDB, LocalStack, k3s
 docker compose up -d
 
 # verify everything is healthy
@@ -168,7 +168,7 @@ make services-up     # convenience wrapper
 
 # tear down
 docker compose down</pre>
-        <p><code>docker-compose.yml</code> ships every dependency the in-tree demos need: MySQL, Postgres, Kafka (broker + zookeeper), Redis, MongoDB, LocalStack (S3 + DynamoDB + SQS + Lambda + STS), and a reflection-enabled gRPC test server. The Spark, Arrow, Parquet, and DuckDB demos run embedded &mdash; no docker required.</p>
+        <p><code>docker-compose.yml</code> ships every dependency the in-tree demos need: MySQL, Postgres, Kafka (KRaft, single-node), Redis, MongoDB, LocalStack (S3 + DynamoDB + SQS + Lambda + STS), and k3s (single-node Kubernetes for stryke-k8s). The Spark, Arrow, Parquet, and DuckDB demos run embedded &mdash; no docker required. The gRPC demo expects an externally-running reflection-enabled gRPC server.</p>
       </section>
 
       <section class="tutorial-section">

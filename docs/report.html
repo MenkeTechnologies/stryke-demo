@@ -112,7 +112,7 @@
           <tr><td><code>stryke.toml</code></td><td>Package manifest. Declares all 14 <code>stryke-*</code> deps with git refs. <code>s install</code> reads this.</td></tr>
           <tr><td><code>demos/NN_pkg.stk</code></td><td>One per connector. Imports its package, exercises 3&ndash;5 core verbs, prints progress.</td></tr>
           <tr><td><code>demos/run_all.stk</code></td><td>Service probe (TCP / UDP / API ping per service) + dispatch + skip-on-unreachable + summary table.</td></tr>
-          <tr><td><code>docker-compose.yml</code></td><td>MySQL, Postgres, Kafka (broker + zookeeper), Redis, MongoDB, LocalStack (S3 / DynamoDB / SQS / Lambda / STS), gRPC test server.</td></tr>
+          <tr><td><code>docker-compose.yml</code></td><td>MySQL, Postgres, Kafka (KRaft, single-node), Redis, MongoDB, LocalStack (S3 / DynamoDB / SQS / Lambda / STS), k3s (single-node Kubernetes for stryke-k8s).</td></tr>
           <tr><td><code>Makefile</code></td><td>Convenience targets: <code>make run-arrow</code>, <code>make services-up</code>, <code>make check</code> (parse all demos), <code>make run-all</code>.</td></tr>
           <tr><td>CI</td><td><code>.github/workflows/ci.yml</code> &mdash; parses every demo (no live runs in CI; services aren't reproducible there).</td></tr>
         </tbody>
