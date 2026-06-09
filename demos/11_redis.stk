@@ -6,7 +6,7 @@
 use Redis
 
 sub tag_join ($key) {
-    my @m = Redis::smembers($key)
+    var @m = Redis::smembers($key)
     @m = sort @m
     join ",", @m
 }
@@ -135,7 +135,7 @@ p "Redis::hget name: " . Redis::hget("demo:user", "name")
 p "Redis::hget role: " . Redis::hget("demo:user", "role")
 
 # ── Redis::hgetall ──
-my ($u) = Redis::hgetall("demo:user")
+val ($u) = Redis::hgetall("demo:user")
 p "Redis::hgetall: name=$u->{name} role=$u->{role}"
 
 # ── Redis::hkeys ──
@@ -156,9 +156,9 @@ Redis::zadd("demo:lb", { alice => 100, bob => 200, charlie => 150 })
 p "Redis::zadd zcard=" . Redis::zcard("demo:lb")
 
 # ── Redis::zrange ──
-my @lb = Redis::zrange("demo:lb", 0, -1, withscores => 1, rev => 1)
+val @lb = Redis::zrange("demo:lb", 0, -1, withscores => 1, rev => 1)
 p "Redis::zrange rev top: $lb[0]->{member}=$lb[0]->{score}"
-my @lb2 = Redis::zrange("demo:lb", 0, 1)
+val @lb2 = Redis::zrange("demo:lb", 0, 1)
 p "Redis::zrange 0,1: " . join(",", @lb2)
 
 # ── Redis::zscore ──
@@ -180,15 +180,15 @@ p "Redis::publish again: " . Redis::publish("demo:chan", "world")
 p "Redis::dbsize: " . Redis::dbsize()
 
 # ── Redis::info ──
-my ($mem) = Redis::info(section => "memory")
+val ($mem) = Redis::info(section => "memory")
 p "Redis::info memory: $mem->{used_memory_human}"
-my ($srv) = Redis::info(section => "server")
+val ($srv) = Redis::info(section => "server")
 p "Redis::info server redis_version=$srv->{redis_version}"
 
 # ── Redis::raw ──
-my ($raw) = Redis::raw(["PING"])
+val ($raw) = Redis::raw(["PING"])
 p "Redis::raw PING: " . to_json($raw)
-my ($raw2) = Redis::raw(["ECHO", "stryke"])
+val ($raw2) = Redis::raw(["ECHO", "stryke"])
 p "Redis::raw ECHO: " . to_json($raw2)
 
 # ── Redis::del ──

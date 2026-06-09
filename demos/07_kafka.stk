@@ -21,50 +21,50 @@ exit 1 unless Kafka::ping()
 p "Kafka::ping ok"
 
 # ── Kafka::cluster ──
-my ($cl) = Kafka::cluster()
+val ($cl) = Kafka::cluster()
 p "Kafka::cluster brokers=$cl->{broker_count} topics=$cl->{topic_count}"
 
 # ── Kafka::topics ──
-my @before = Kafka::topics()
+val @before = Kafka::topics()
 p "Kafka::topics #{len(@before)} before create"
 
 # ── Kafka::create_topic ──
-my $topic = "stryke-demo-$$"
+val $topic = "stryke-demo-$$"
 Kafka::create_topic $topic, partitions => 3, replication => 1
 p "Kafka::create_topic $topic partitions=3 replication=1"
-my $topic2 = "$topic-stream"
+val $topic2 = "$topic-stream"
 Kafka::create_topic $topic2, partitions => 1, replication => 1,
     configs => { "retention.ms" => "60000" }
 p "Kafka::create_topic $topic2 partitions=1 configs retention.ms"
 
 # ── Kafka::describe ──
-my ($info) = Kafka::describe $topic
+val ($info) = Kafka::describe $topic
 p "Kafka::describe partitions=$info->{partition_count}"
-my ($info2) = Kafka::describe $topic2
+val ($info2) = Kafka::describe $topic2
 p "Kafka::describe stream topic partitions=$info2->{partition_count}"
 
 # ── Kafka::produce ──
-for my $i (1..2) {
-    my ($r) = Kafka::produce($topic, "single-$i",
+for val $i (1..2) {
+    val ($r) = Kafka::produce($topic, "single-$i",
         key     => "k$i",
         headers => { trace => "demo", seq => "$i" },
     )
     p "  Kafka::produce partition=$r->{partition} offset=$r->{offset}"
 }
-my ($r3) = Kafka::produce($topic, "partitioned", key => "fixed", partition => 0)
+val ($r3) = Kafka::produce($topic, "partitioned", key => "fixed", partition => 0)
 p "Kafka::produce partition=0 $r3->{partition}\@$r3->{offset}"
 
 # ── Kafka::produce_many ──
-my ($pm) = Kafka::produce_many([
+val ($pm) = Kafka::produce_many([
     { value => "bulk-a", key => "ka" },
     { value => "bulk-b", key => "kb", headers => { batch => "1" } },
 ], default_topic => $topic, limit => 10)
 p "Kafka::produce_many sent=$pm->{sent}"
 
-my $grp = "stryke-demo-$$"
+val $grp = "stryke-demo-$$"
 
 # ── Kafka::consume ──
-my @msgs = Kafka::consume $topic,
+val @msgs = Kafka::consume $topic,
     group        => $grp,
     offset_reset => "earliest",
     max          => 10,
@@ -73,8 +73,8 @@ p "Kafka::consume earliest max=10 ${\ len(@msgs)} messages"
 
 Kafka::produce $topic2, "stream-1"
 Kafka::produce $topic2, "stream-2"
-my $grp2 = "$grp-stream"
-my @msgs2 = Kafka::consume $topic2,
+val $grp2 = "$grp-stream"
+val @msgs2 = Kafka::consume $topic2,
     group        => $grp2,
     offset_reset => "latest",
     max          => 5,
@@ -85,15 +85,15 @@ p "Kafka::consume latest commit=1 ${\ len(@msgs2)} messages"
 # ── Kafka::consume_stream ──
 Kafka::produce $topic2, "stream-callback-1"
 Kafka::produce $topic2, "stream-callback-2"
-my $grp3 = "$grp-stream-cb"
-my $cs = Kafka::consume_stream($topic2,
+val $grp3 = "$grp-stream-cb"
+val $cs = Kafka::consume_stream($topic2,
     group        => $grp3,
     offset_reset => "earliest",
     max          => 5,
     idle_ms      => 5_000,
     callback     => sub ($m) { p "  stream: $m->{value}" })
 p "Kafka::consume_stream $cs messages"
-my $cs2 = Kafka::consume_stream($topic,
+val $cs2 = Kafka::consume_stream($topic,
     group        => "$grp-cb2",
     offset_reset => "earliest",
     max          => 3,
@@ -103,13 +103,13 @@ my $cs2 = Kafka::consume_stream($topic,
 p "Kafka::consume_stream value_mode=string $cs2 messages"
 
 # ── Kafka::groups ──
-my @groups = Kafka::groups()
+val @groups = Kafka::groups()
 p "Kafka::groups #{len(@groups)} (incl. $grp)"
 
 # ── Kafka::lag ──
-my @lag = Kafka::lag($grp, topic => $topic)
-my $total_lag = 0
-for my $r (@lag) {
+val @lag = Kafka::lag($grp, topic => $topic)
+var $total_lag = 0
+for val $r (@lag) {
     if (defined $r->{total_lag}) {
         $total_lag = $r->{total_lag}
         next
@@ -117,21 +117,21 @@ for my $r (@lag) {
     p "  lag p$r->{partition}: $r->{lag}" if defined $r->{lag}
 }
 p "Kafka::lag topic=$topic total=$total_lag"
-my @lag2 = Kafka::lag($grp2)
+val @lag2 = Kafka::lag($grp2)
 p "Kafka::lag all topics #{len(@lag2)} partition rows"
 
 # ── Kafka::produce (partition explicit) ──
-my ($rp) = Kafka::produce($topic, "late-msg", key => "late", partition => 1)
+val ($rp) = Kafka::produce($topic, "late-msg", key => "late", partition => 1)
 p "Kafka::produce partition=1 offset=$rp->{offset}"
 
 # ── Kafka::produce_many (ack_timeout) ──
-my ($pm2) = Kafka::produce_many([
+val ($pm2) = Kafka::produce_many([
     { value => "bulk-c", key => "kc" },
 ], default_topic => $topic, ack_timeout_ms => 5000, limit => 5)
 p "Kafka::produce_many ack_timeout sent=$pm2->{sent}"
 
 # ── Kafka::consume (value_mode) ──
-my @msgs3 = Kafka::consume($topic,
+val @msgs3 = Kafka::consume($topic,
     group        => "$grp-vm",
     offset_reset => "earliest",
     max          => 3,
@@ -141,11 +141,11 @@ my @msgs3 = Kafka::consume($topic,
 p "Kafka::consume value_mode=string ${\ len(@msgs3)} messages"
 
 # ── Kafka::cluster (re-check after traffic) ──
-my ($cl2) = Kafka::cluster()
+val ($cl2) = Kafka::cluster()
 p "Kafka::cluster after traffic topics=$cl2->{topic_count}"
 
 # ── Kafka::topics (after create) ──
-my @after = Kafka::topics()
+val @after = Kafka::topics()
 p "Kafka::topics #{len(@after)} after demo topics"
 
 # ── Kafka::groups (stream groups) ──
@@ -153,18 +153,18 @@ p "Kafka::groups includes $grp2: " .
     (grep { (ref($_) eq "HASH" ? ($_->{name} // "") : $_) eq $grp2 } @groups ? "yes" : "maybe")
 
 # ── Kafka::describe (re-read main topic) ──
-my ($info3) = Kafka::describe($topic)
+val ($info3) = Kafka::describe($topic)
 p "Kafka::describe pre-delete partitions=$info3->{partition_count}"
 
 # ── Kafka::produce_many (limit) ──
-my ($pm3) = Kafka::produce_many([
+val ($pm3) = Kafka::produce_many([
     { value => "bulk-d", key => "kd" },
     { value => "bulk-e", key => "ke" },
 ], default_topic => $topic, limit => 2)
 p "Kafka::produce_many limit=2 sent=$pm3->{sent}"
 
 # ── Kafka::consume (commit variant) ──
-my @msgs4 = Kafka::consume($topic,
+val @msgs4 = Kafka::consume($topic,
     group => "$grp-commit", offset_reset => "earliest",
     max => 2, idle_ms => 3_000, commit => 1,
 )

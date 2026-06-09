@@ -16,7 +16,7 @@ $ENV{AWS_REGION}       //= "us-east-1"
 $ENV{AWS_ACCESS_KEY_ID} //= "test"
 $ENV{AWS_SECRET_ACCESS_KEY} //= "test"
 
-my $ep = $ENV{AWS_ENDPOINT_URL}
+val $ep = $ENV{AWS_ENDPOINT_URL}
 
 p "── stryke-aws demo (full API) ──"
 
@@ -33,12 +33,12 @@ p "AWS::version " . AWS::version()
 p "AWS::ping: " . (AWS::ping() ? "ok" : "down")
 
 # ── AWS::STS::caller_identity ──
-my ($who) = AWS::STS::caller_identity()
+val ($who) = AWS::STS::caller_identity()
 p "AWS::STS::caller_identity account=$who->{account} arn=$who->{Arn}"
 
 # ── AWS::STS::assume_role ──
 if ($ENV{STRYKE_DEMO_AWS_ROLE}) {
-    my ($creds) = AWS::STS::assume_role($ENV{STRYKE_DEMO_AWS_ROLE},
+    val ($creds) = AWS::STS::assume_role($ENV{STRYKE_DEMO_AWS_ROLE},
         session => "stryke-demo", duration => 900)
     p "AWS::STS::assume_role session=$creds->{access_key_id}"
 } else {
@@ -46,17 +46,17 @@ if ($ENV{STRYKE_DEMO_AWS_ROLE}) {
 }
 
 # ── S3 setup ──
-my $bucket = "stryke-demo-$$"
+val $bucket = "stryke-demo-$$"
 system("aws --endpoint-url " . AWS::_shq($ep) .
        " s3 mb s3://$bucket >/dev/null 2>&1") == 0
     or die "S3 bucket create failed"
-my $key = "dir/hello.txt"
-my $key2 = "dir/from-file.txt"
-my $local_in = "/tmp/stryke-demo-aws-in-$$.txt"
-open my $lfh, ">", $local_in or die $!
+val $key = "dir/hello.txt"
+val $key2 = "dir/from-file.txt"
+val $local_in = "/tmp/stryke-demo-aws-in-$$.txt"
+open val $lfh, ">", $local_in or die $!
 print $lfh "from local file\n"
 close $lfh
-my $local_out = "/tmp/stryke-demo-aws-out-$$.txt"
+val $local_out = "/tmp/stryke-demo-aws-out-$$.txt"
 
 # ── AWS::S3::put ──
 AWS::S3::put("s3://$bucket/$key", data => "hello stryke",
@@ -67,29 +67,29 @@ AWS::S3::put("s3://$bucket/$key2", input => $local_in,
 p "AWS::S3::put input file ok"
 
 # ── AWS::S3::get ──
-my $body = AWS::S3::get("s3://$bucket/$key")
+val $body = AWS::S3::get("s3://$bucket/$key")
 p "AWS::S3::get data len=" . length($body)
-my $outpath = AWS::S3::get("s3://$bucket/$key2", output => $local_out)
+val $outpath = AWS::S3::get("s3://$bucket/$key2", output => $local_out)
 p "AWS::S3::get output file=$outpath size=" . (-s $outpath)
 
 # ── AWS::S3::head ──
-my ($head) = AWS::S3::head("s3://$bucket/$key")
+val ($head) = AWS::S3::head("s3://$bucket/$key")
 p "AWS::S3::head size=$head->{size}"
 
 # ── AWS::S3::ls ──
-my @objs = AWS::S3::ls("s3://$bucket/", delimiter => "/")
+val @objs = AWS::S3::ls("s3://$bucket/", delimiter => "/")
 p "AWS::S3::ls delimiter=/ #{len(@objs)} entries"
-my @objs2 = AWS::S3::ls("s3://$bucket/", limit => 1)
+val @objs2 = AWS::S3::ls("s3://$bucket/", limit => 1)
 p "AWS::S3::ls limit=1 #{len(@objs2)} entries"
 
 # ── AWS::S3::presign ──
-my ($ps) = AWS::S3::presign("s3://$bucket/$key", expires => 300, method => "GET")
+val ($ps) = AWS::S3::presign("s3://$bucket/$key", expires => 300, method => "GET")
 p "AWS::S3::presign GET url=" . substr($ps->{url}, 0, 50) . "…"
-my ($ps2) = AWS::S3::presign("s3://$bucket/$key", expires => 600, method => "PUT")
+val ($ps2) = AWS::S3::presign("s3://$bucket/$key", expires => 600, method => "PUT")
 p "AWS::S3::presign PUT method=$ps2->{method}"
 
 # ── AWS::S3::buckets ──
-my @buckets = AWS::S3::buckets()
+val @buckets = AWS::S3::buckets()
 p "AWS::S3::buckets #{len(@buckets)} (incl. $bucket)"
 
 # ── AWS::S3::rm ──
@@ -102,7 +102,7 @@ unlink $local_in if -e $local_in
 unlink $local_out if -e $local_out
 
 # ── DynamoDB setup ──
-my $tbl = "stryke_demo_$$"
+val $tbl = "stryke_demo_$$"
 system("aws --endpoint-url " . AWS::_shq($ep) .
        " dynamodb create-table --table-name $tbl" .
        " --attribute-definitions AttributeName=id,AttributeType=S" .
@@ -124,38 +124,38 @@ AWS::Dynamo::batch_write($tbl, [
 p "AWS::Dynamo::batch_write 2 items ok"
 
 # ── AWS::Dynamo::get ──
-my ($got) = AWS::Dynamo::get($tbl, { id => "k1" })
+val ($got) = AWS::Dynamo::get($tbl, { id => "k1" })
 p "AWS::Dynamo::get name=$got->{name}"
-my ($got2) = AWS::Dynamo::get($tbl, { id => "k1" }, consistent => 1)
+val ($got2) = AWS::Dynamo::get($tbl, { id => "k1" }, consistent => 1)
 p "AWS::Dynamo::get consistent name=$got2->{name}"
 
 # ── AWS::Dynamo::query ──
-my @q = AWS::Dynamo::query($tbl, expr => "id = :id", vals => { ":id" => "k1" })
+val @q = AWS::Dynamo::query($tbl, expr => "id = :id", vals => { ":id" => "k1" })
 p "AWS::Dynamo::query #{len(@q)} row(s)"
-my @q2 = AWS::Dynamo::query($tbl, expr => "id = :id", vals => { ":id" => "k2" }, limit => 1)
+val @q2 = AWS::Dynamo::query($tbl, expr => "id = :id", vals => { ":id" => "k2" }, limit => 1)
 p "AWS::Dynamo::query limit=1 #{len(@q2)} row(s)"
 
 # ── AWS::Dynamo::scan ──
-my @scan = AWS::Dynamo::scan($tbl, limit => 10)
+val @scan = AWS::Dynamo::scan($tbl, limit => 10)
 p "AWS::Dynamo::scan limit=10 #{len(@scan)} row(s)"
-my @scan2 = AWS::Dynamo::scan($tbl, filter => "attribute_exists(name)", limit => 2)
+val @scan2 = AWS::Dynamo::scan($tbl, filter => "attribute_exists(name)", limit => 2)
 p "AWS::Dynamo::scan filter+limit #{len(@scan2)} row(s)"
 
 # ── AWS::Dynamo::scan_stream ──
-my $ss = 0
+var $ss = 0
 AWS::Dynamo::scan_stream($tbl, limit => 5, callback => sub ($r) { $ss++ })
 p "AWS::Dynamo::scan_stream limit=5 $ss row(s)"
-my $ss2 = 0
+var $ss2 = 0
 AWS::Dynamo::scan_stream($tbl, filter => "id <> :x", vals => { ":x" => "none" },
     callback => sub ($r) { $ss2++ })
 p "AWS::Dynamo::scan_stream filter $ss2 row(s)"
 
 # ── AWS::Dynamo::tables ──
-my @tbls = AWS::Dynamo::tables()
+val @tbls = AWS::Dynamo::tables()
 p "AWS::Dynamo::tables includes $tbl: " . (grep { $_ eq $tbl } @tbls ? "yes" : "no")
 
 # ── AWS::Dynamo::describe ──
-my ($desc) = AWS::Dynamo::describe($tbl)
+val ($desc) = AWS::Dynamo::describe($tbl)
 p "AWS::Dynamo::describe status=$desc->{status}"
 
 # ── AWS::Dynamo::delete ──
@@ -167,7 +167,7 @@ system("aws --endpoint-url " . AWS::_shq($ep) .
        " dynamodb delete-table --table-name $tbl >/dev/null 2>&1")
 
 # ── SQS setup ──
-my $qurl = qx{aws --endpoint-url $ep sqs create-queue --queue-name stryke-demo-$$ --output text 2>/dev/null}
+val $qurl = qx{aws --endpoint-url $ep sqs create-queue --queue-name stryke-demo-$$ --output text 2>/dev/null}
 chomp $qurl
 if ($qurl ne "") {
 
@@ -177,31 +177,31 @@ if ($qurl ne "") {
     p "AWS::SQS::send 2 messages ok"
 
     # ── AWS::SQS::receive ──
-    my @recv = AWS::SQS::receive($qurl, max => 2, wait => 5)
+    val @recv = AWS::SQS::receive($qurl, max => 2, wait => 5)
     p "AWS::SQS::receive max=2 wait=5 #{len(@recv)} msg(s)"
-    for my $m (@recv) {
+    for val $m (@recv) {
         AWS::SQS::delete($qurl, $m->{receipt_handle})
     }
     AWS::SQS::send($qurl, "recv-test")
-    my @recv2 = AWS::SQS::receive($qurl, max => 1, visibility => 30)
+    val @recv2 = AWS::SQS::receive($qurl, max => 1, visibility => 30)
     p "AWS::SQS::receive visibility=30 #{len(@recv2)} msg(s)"
-    for my $m (@recv2) {
+    for val $m (@recv2) {
         AWS::SQS::delete($qurl, $m->{receipt_handle})
     }
 
     # ── AWS::SQS::attrs ──
-    my ($attrs) = AWS::SQS::attrs($qurl)
+    val ($attrs) = AWS::SQS::attrs($qurl)
     p "AWS::SQS::attrs approx=" . ($attrs->{approximate_number_of_messages} // "?")
 
     # ── AWS::SQS::list ──
-    my @queues = AWS::SQS::list()
+    val @queues = AWS::SQS::list()
     p "AWS::SQS::list #{len(@queues)} queue(s)"
-    my @queues2 = AWS::SQS::list(prefix => "stryke-demo")
+    val @queues2 = AWS::SQS::list(prefix => "stryke-demo")
     p "AWS::SQS::list prefix=stryke-demo #{len(@queues2)} queue(s)"
 
     # ── AWS::SQS::pump ──
     AWS::SQS::send($qurl, "pump-me")
-    my $pn = AWS::SQS::pump($qurl, iterations => 1, max => 1, wait => 3,
+    val $pn = AWS::SQS::pump($qurl, iterations => 1, max => 1, wait => 3,
         callback => sub ($m) { p "  pump: $m->{body}" })
     p "AWS::SQS::pump handled $pn"
 
@@ -214,15 +214,15 @@ if ($qurl ne "") {
 }
 
 # ── AWS::Lambda::list ──
-my @fns = AWS::Lambda::list()
+val @fns = AWS::Lambda::list()
 p "AWS::Lambda::list #{len(@fns)} function(s)"
 
 # ── AWS::Lambda::invoke ──
 if ($ENV{STRYKE_DEMO_LAMBDA}) {
-    my ($out) = AWS::Lambda::invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
+    val ($out) = AWS::Lambda::invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
         log_tail => 1)
     p "AWS::Lambda::invoke status=$out->{status_code}"
-    my ($out2) = AWS::Lambda::invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
+    val ($out2) = AWS::Lambda::invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
         invocation_type => "RequestResponse", qualifier => "\$LATEST")
     p "AWS::Lambda::invoke qualifier status=$out2->{status_code}"
 } else {
@@ -231,7 +231,7 @@ if ($ENV{STRYKE_DEMO_LAMBDA}) {
 
 # ── AWS::Lambda::call ──
 if ($ENV{STRYKE_DEMO_LAMBDA}) {
-    my $payload = AWS::Lambda::call($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 })
+    val $payload = AWS::Lambda::call($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 })
     p "AWS::Lambda::call " . to_json($payload)
 } else {
     p "AWS::Lambda::call skipped (set STRYKE_DEMO_LAMBDA=name to exercise)"

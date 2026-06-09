@@ -23,33 +23,33 @@ p "DuckDB::version " . DuckDB::version()
 p "DuckDB::ping: " . (DuckDB::ping() ? "ok" : "down")
 
 # ── DuckDB::inspect (in-memory) ──
-my ($mem) = DuckDB::inspect()
+val ($mem) = DuckDB::inspect()
 p "DuckDB::inspect in-mem file=$mem->{file}"
 
 # ── DuckDB::query ──
-my @r = DuckDB::query "SELECT 1+1 AS two, 'hi' AS s"
+val @r = DuckDB::query "SELECT 1+1 AS two, 'hi' AS s"
 p "DuckDB::query two=$r[0]->{two}"
-my @r_lim = DuckDB::query("SELECT n FROM range(20) AS t(n)", limit => 4)
+val @r_lim = DuckDB::query("SELECT n FROM range(20) AS t(n)", limit => 4)
 p "DuckDB::query limit=4 #{len(@r_lim)} rows"
 
 # ── DuckDB::query (bind) ──
-my @r_bind = DuckDB::query("SELECT ? AS x, ? AS y", bind => [42, "bound"])
+val @r_bind = DuckDB::query("SELECT ? AS x, ? AS y", bind => [42, "bound"])
 p "DuckDB::query bind x=$r_bind[0]->{x} y=$r_bind[0]->{y}"
-my @r_bind2 = DuckDB::query("SELECT n FROM range(?) AS t(n) WHERE n > ?",
+val @r_bind2 = DuckDB::query("SELECT n FROM range(?) AS t(n) WHERE n > ?",
     bind => [10, 5], limit => 3)
 p "DuckDB::query bind+limit #{len(@r_bind2)} rows"
 
 # ── DuckDB::query (columnar) ──
-my ($cw) = DuckDB::query("SELECT n FROM range(3) AS t(n)", columnar => 1)
+val ($cw) = DuckDB::query("SELECT n FROM range(3) AS t(n)", columnar => 1)
 p "DuckDB::query columnar cols: " . join(",", sort keys %{ $cw->{columns} // {} })
-my ($cw2) = DuckDB::query("SELECT n, n*2 AS d FROM range(5) AS t(n)",
+val ($cw2) = DuckDB::query("SELECT n, n*2 AS d FROM range(5) AS t(n)",
     columnar => 1, limit => 3)
 p "DuckDB::query columnar+limit cols: " . join(",", sort keys %{ $cw2->{columns} // {} })
 
 # ── DuckDB::query (with_meta) ──
-my ($meta) = DuckDB::query("SELECT * FROM range(2) AS t(n)", with_meta => 1)
+val ($meta) = DuckDB::query("SELECT * FROM range(2) AS t(n)", with_meta => 1)
 p "DuckDB::query with_meta rows=#{len($meta->{rows})}"
-my ($meta2) = DuckDB::query("SELECT n FROM range(10) AS t(n)",
+val ($meta2) = DuckDB::query("SELECT n FROM range(10) AS t(n)",
     with_meta => 1, limit => 4)
 p "DuckDB::query with_meta+limit rows=#{len($meta2->{rows})}"
 
@@ -59,36 +59,36 @@ p "DuckDB::query_scalar bind=" .
     DuckDB::query_scalar("SELECT SUM(n) FROM range(?) AS t(n)", bind => [6])
 
 # ── DuckDB::query_one ──
-my ($one) = DuckDB::query_one("SELECT 42 AS answer")
+val ($one) = DuckDB::query_one("SELECT 42 AS answer")
 p "DuckDB::query_one answer=$one->{answer}"
-my ($one2) = DuckDB::query_one("SELECT ? AS v", bind => ["hello"])
+val ($one2) = DuckDB::query_one("SELECT ? AS v", bind => ["hello"])
 p "DuckDB::query_one bind v=$one2->{v}"
 
 # ── DuckDB::query_col ──
-my @col = DuckDB::query_col("SELECT n FROM range(4) AS t(n)")
+val @col = DuckDB::query_col("SELECT n FROM range(4) AS t(n)")
 p "DuckDB::query_col " . join(",", @col)
-my @col2 = DuckDB::query_col("SELECT n FROM range(20) AS t(n)", limit => 5)
+val @col2 = DuckDB::query_col("SELECT n FROM range(20) AS t(n)", limit => 5)
 p "DuckDB::query_col limit=5 " . join(",", @col2)
 
 # ── DuckDB::query_stream ──
-my $sn = DuckDB::query_stream("SELECT n FROM range(50) AS t(n)",
+val $sn = DuckDB::query_stream("SELECT n FROM range(50) AS t(n)",
     callback => sub ($r) { 1 })
 p "DuckDB::query_stream $sn rows"
-my $sn2 = DuckDB::query_stream("SELECT n FROM range(100) AS t(n) WHERE n > ?",
+val $sn2 = DuckDB::query_stream("SELECT n FROM range(100) AS t(n) WHERE n > ?",
     bind => [90], limit => 5, callback => sub ($r) { 1 })
 p "DuckDB::query_stream bind+limit $sn2 rows"
 
-my $tmp = "/tmp/stryke-demo-duckdb"
+val $tmp = "/tmp/stryke-demo-duckdb"
 mkdir $tmp unless -d $tmp
-my $db = "/tmp/stryke-demo-duckdb-$$.duckdb"
-my $pq = "$tmp/people.parquet"
-my $csv = "$tmp/people.csv"
+val $db = "/tmp/stryke-demo-duckdb-$$.duckdb"
+val $pq = "$tmp/people.parquet"
+val $csv = "$tmp/people.csv"
 
 # ── DuckDB::execute ──
 DuckDB::execute("CREATE TABLE people (id INT, name VARCHAR, score DOUBLE)", db => $db)
 DuckDB::execute("INSERT INTO people VALUES (1,'alice',98.5),(2,'bob',87.0)", db => $db)
 p "DuckDB::execute CREATE+INSERT ok"
-my ($ex) = DuckDB::execute("UPDATE people SET score = score + ? WHERE id = ?",
+val ($ex) = DuckDB::execute("UPDATE people SET score = score + ? WHERE id = ?",
     bind => [0.5, 2], db => $db)
 p "DuckDB::execute bind affected=$ex->{affected_rows}"
 
@@ -115,44 +115,44 @@ p "DuckDB::import csv replace rows=" .
 p "DuckDB::tables " . join(",", DuckDB::tables(db => $db))
 
 # ── DuckDB::schema ──
-my ($sch) = DuckDB::schema("people", db => $db)
+val ($sch) = DuckDB::schema("people", db => $db)
 p "DuckDB::schema people cols: " . join(",", map { $_->{name} } @{ $sch->{columns} })
 
 # ── DuckDB::dump ──
-my @dump = DuckDB::dump("people", db => $db, order_by => "score DESC", limit => 2)
+val @dump = DuckDB::dump("people", db => $db, order_by => "score DESC", limit => 2)
 p "DuckDB::dump table order+limit #{len(@dump)} rows"
-my @dump2 = DuckDB::dump($pq, db => $db, columns => "id,name", where => "score > 80")
+val @dump2 = DuckDB::dump($pq, db => $db, columns => "id,name", where => "score > 80")
 p "DuckDB::dump parquet path where+columns #{len(@dump2)} rows"
 
 # ── DuckDB::export ──
-my $out = "$tmp/out.parquet"
+val $out = "$tmp/out.parquet"
 DuckDB::export("people", $out, kind => "parquet", db => $db)
 p "DuckDB::export parquet wrote $out"
-my $out_csv = "$tmp/out.csv"
+val $out_csv = "$tmp/out.csv"
 DuckDB::export("people", $out_csv, kind => "csv", db => $db)
 p "DuckDB::export csv wrote $out_csv"
 
 # ── DuckDB::inspect (file db) ──
-my ($fi) = DuckDB::inspect(db => $db)
+val ($fi) = DuckDB::inspect(db => $db)
 p "DuckDB::inspect file size=$fi->{file_size}"
 
 # ── DuckDB::exec_file ──
-my $sql = "/tmp/stryke-demo-duck-$$.sql"
-open my $fh, ">", $sql or die $!
+val $sql = "/tmp/stryke-demo-duck-$$.sql"
+open val $fh, ">", $sql or die $!
 print $fh "UPDATE people SET score = score + 1 WHERE name = 'bob';\n"
 print $fh "UPDATE people SET score = score + 1 WHERE name = 'alice';\n"
 close $fh
-my @ef = DuckDB::exec_file($sql, db => $db)
+val @ef = DuckDB::exec_file($sql, db => $db)
 p "DuckDB::exec_file #{len(@ef)} stmt(s)"
 unlink $sql
 
 # ── DuckDB::export (compression) ──
-my $out_zstd = "$tmp/out-zstd.parquet"
+val $out_zstd = "$tmp/out-zstd.parquet"
 DuckDB::export("people", $out_zstd, kind => "parquet", compression => "zstd", db => $db)
 p "DuckDB::export parquet zstd compression"
 
 # ── DuckDB::dump (SQL table with where) ──
-my @dump3 = DuckDB::dump("people", db => $db,
+val @dump3 = DuckDB::dump("people", db => $db,
     where => "score >= 90", columns => "name,score", order_by => "score DESC")
 p "DuckDB::dump where+columns #{len(@dump3)} rows"
 
@@ -162,13 +162,13 @@ p "DuckDB::import auto csv rows=" .
     DuckDB::query_scalar("SELECT COUNT(*) FROM imported_csv2", db => $db)
 
 # ── DuckDB::query_stream (bind+limit) ──
-my $dsn = DuckDB::query_stream("SELECT n FROM range(?) AS t(n) WHERE n > ?",
+val $dsn = DuckDB::query_stream("SELECT n FROM range(?) AS t(n) WHERE n > ?",
     bind => [20, 15], limit => 3, db => $db,
     callback => sub ($r) { p "  bind stream n=$r->{n}" })
 p "DuckDB::query_stream bind $dsn rows"
 
 # ── DuckDB::execute (bind update) ──
-my ($ex3) = DuckDB::execute("UPDATE people SET score = ? WHERE name = ?",
+val ($ex3) = DuckDB::execute("UPDATE people SET score = ? WHERE name = ?",
     bind => [99.0, "alice"], db => $db)
 p "DuckDB::execute bind update affected=$ex3->{affected_rows}"
 
@@ -176,19 +176,19 @@ p "DuckDB::execute bind update affected=$ex3->{affected_rows}"
 p "DuckDB::tables file db: " . join(",", DuckDB::tables(db => $db))
 
 # ── DuckDB::schema (imported table) ──
-my ($sch2) = DuckDB::schema("imported_pq", db => $db)
+val ($sch2) = DuckDB::schema("imported_pq", db => $db)
 p "DuckDB::schema imported_pq cols=#{len($sch2->{columns} // [])}"
 
 # ── DuckDB::query (with_meta file db) ──
-my ($meta3) = DuckDB::query("SELECT * FROM people", with_meta => 1, db => $db, limit => 2)
+val ($meta3) = DuckDB::query("SELECT * FROM people", with_meta => 1, db => $db, limit => 2)
 p "DuckDB::query with_meta file db rows=#{len($meta3->{rows})}"
 
 # ── DuckDB::inspect (re-check) ──
-my ($fi2) = DuckDB::inspect(db => $db)
+val ($fi2) = DuckDB::inspect(db => $db)
 p "DuckDB::inspect final size=$fi2->{file_size}"
 
 # ── DuckDB::query_col (file db) ──
-my @names = DuckDB::query_col("SELECT name FROM people ORDER BY name", db => $db)
+val @names = DuckDB::query_col("SELECT name FROM people ORDER BY name", db => $db)
 p "DuckDB::query_col names=" . join(",", @names)
 
 unlink $db if -e $db

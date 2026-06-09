@@ -23,28 +23,28 @@ p "Spark::ping default: " . (Spark::ping() ? "alive" : "down")
 p "Spark::ping app_name: " . (Spark::ping(app_name => "stryke-demo-spark") ? "alive" : "down")
 
 # ── Spark::query ──
-my @rows = Spark::query "
+val @rows = Spark::query "
     SELECT name, score, score * 2 AS doubled
     FROM (VALUES ('alice',98.5),('bob',87.0),('charlie',91.2)) AS t(name,score)
     ORDER BY score DESC
 "
 p "Spark::query #{len(@rows)} rows"
-my @rows_lim = Spark::query("SELECT * FROM range(20)", limit => 5)
+val @rows_lim = Spark::query("SELECT * FROM range(20)", limit => 5)
 p "Spark::query limit=5 #{len(@rows_lim)} rows"
 
-my @rows_filt = Spark::query("SELECT id, id * 3 AS triple FROM range(10) WHERE id > 3", limit => 4)
+val @rows_filt = Spark::query("SELECT id, id * 3 AS triple FROM range(10) WHERE id > 3", limit => 4)
 p "Spark::query where+limit #{len(@rows_filt)} rows"
 
 # ── Spark::query (columnar) ──
-my ($cw) = Spark::query("SELECT id, id*2 AS d FROM range(4)", columnar => 1)
+val ($cw) = Spark::query("SELECT id, id*2 AS d FROM range(4)", columnar => 1)
 p "Spark::query columnar cols: " . join(",", sort keys %{ $cw->{columns} // {} })
-my ($cw2) = Spark::query("SELECT id FROM range(10)", columnar => 1, limit => 3)
+val ($cw2) = Spark::query("SELECT id FROM range(10)", columnar => 1, limit => 3)
 p "Spark::query columnar limit=3 cols: " . join(",", sort keys %{ $cw2->{columns} // {} })
 
 # ── Spark::query (with_meta) ──
-my ($meta) = Spark::query("SELECT * FROM range(3)", with_meta => 1)
+val ($meta) = Spark::query("SELECT * FROM range(3)", with_meta => 1)
 p "Spark::query with_meta rows=#{len($meta->{rows})}"
-my ($meta2) = Spark::query("SELECT id, id*10 AS ten FROM range(5)", with_meta => 1, limit => 2)
+val ($meta2) = Spark::query("SELECT id, id*10 AS ten FROM range(5)", with_meta => 1, limit => 2)
 p "Spark::query with_meta+limit rows=#{len($meta2->{rows})}"
 
 # ── Spark::query_scalar ──
@@ -52,22 +52,22 @@ p "Spark::query_scalar sum=" . Spark::query_scalar("SELECT SUM(id) FROM range(1,
 p "Spark::query_scalar limit=" . Spark::query_scalar("SELECT MAX(id) FROM range(50)", limit => 1)
 
 # ── Spark::query_one ──
-my ($one) = Spark::query_one("SELECT id, id*10 AS ten FROM range(1) LIMIT 1")
+val ($one) = Spark::query_one("SELECT id, id*10 AS ten FROM range(1) LIMIT 1")
 p "Spark::query_one id=$one->{id} ten=$one->{ten}"
-my ($one2) = Spark::query_one("SELECT id FROM range(100) WHERE id = 42")
+val ($one2) = Spark::query_one("SELECT id FROM range(100) WHERE id = 42")
 p "Spark::query_one id=42 found=$one2->{id}"
 
 # ── Spark::query_col ──
-my @ids = Spark::query_col("SELECT id FROM range(5)")
+val @ids = Spark::query_col("SELECT id FROM range(5)")
 p "Spark::query_col ids=" . join(",", @ids)
-my @ids2 = Spark::query_col("SELECT id FROM range(20)", limit => 4)
+val @ids2 = Spark::query_col("SELECT id FROM range(20)", limit => 4)
 p "Spark::query_col limit=4=" . join(",", @ids2)
 
 # ── Spark::query_stream ──
-my $sn = Spark::query_stream("SELECT id FROM range(10)",
+val $sn = Spark::query_stream("SELECT id FROM range(10)",
     callback => sub ($r) { 1 })
 p "Spark::query_stream $sn rows"
-my $sn2 = Spark::query_stream("SELECT id FROM range(50)", limit => 8,
+val $sn2 = Spark::query_stream("SELECT id FROM range(50)", limit => 8,
     callback => sub ($r) { 1 })
 p "Spark::query_stream limit=8 $sn2 rows"
 
@@ -84,41 +84,41 @@ p "Spark::tables: " . join(", ", grep { $_ =~ /^demo_/ } Spark::tables())
 p "Spark::databases: " . join(", ", Spark::databases())
 
 # ── Spark::schema ──
-my ($sch) = Spark::schema("demo_t")
+val ($sch) = Spark::schema("demo_t")
 p "Spark::schema demo_t cols: " . join(",", map { $_->{name} } @{ $sch->{columns} // [] })
 
 # ── Spark::dump ──
-my @dump = Spark::dump("demo_t", limit => 4, order_by => "id DESC")
+val @dump = Spark::dump("demo_t", limit => 4, order_by => "id DESC")
 p "Spark::dump limit+order #{len(@dump)} rows"
-my @dump2 = Spark::dump("demo_t", where => "id > 2", columns => "id,doubled", limit => 3)
+val @dump2 = Spark::dump("demo_t", where => "id > 2", columns => "id,doubled", limit => 3)
 p "Spark::dump where+columns+limit #{len(@dump2)} rows"
 
-my @dump3 = Spark::dump("demo_t", order_by => "doubled ASC", limit => 2)
+val @dump3 = Spark::dump("demo_t", order_by => "doubled ASC", limit => 2)
 p "Spark::dump order ASC limit=2 #{len(@dump3)} rows"
 
 # ── Spark::query + read_files (arrow parquet pipeline) ──
-my $tmp = "/tmp/stryke-demo-spark-$$"
+val $tmp = "/tmp/stryke-demo-spark-$$"
 mkdir $tmp unless -d $tmp
-my $path = "$tmp/orders.parquet"
-my @orders = map { { order_id => $_, customer => "c" . ($_ % 3), amount => $_ * 7.5 } } (1..30)
+val $path = "$tmp/orders.parquet"
+val @orders = map { { order_id => $_, customer => "c" . ($_ % 3), amount => $_ * 7.5 } } (1..30)
 Arrow::write($path, \@orders, format => "parquet")
-my @sum = Spark::query "
+val @sum = Spark::query "
     SELECT customer, COUNT(*) AS n, ROUND(SUM(amount),1) AS rev
     FROM read_files('$path', format => 'parquet')
     GROUP BY customer ORDER BY rev DESC
 "
 p "Spark::query read_files #{len(@sum)} groups"
-my @sum_lim = Spark::query "
+val @sum_lim = Spark::query "
     SELECT * FROM read_files('$path', format => 'parquet') WHERE amount > 50
 ", limit => 5
 p "Spark::query read_files limit=5 #{len(@sum_lim)} rows"
-my ($sum_col) = Spark::query("
+val ($sum_col) = Spark::query("
     SELECT customer, amount FROM read_files('$path', format => 'parquet')
 ", columnar => 1, limit => 10)
 p "Spark::query read_files columnar cols=" . join(",", sort keys %{ $sum_col->{columns} // {} })
 
 # ── Spark::query_stream (limit variant) ──
-my $sn3 = Spark::query_stream("SELECT id, id*id AS sq FROM range(30)",
+val $sn3 = Spark::query_stream("SELECT id, id*id AS sq FROM range(30)",
     limit => 12, callback => sub ($r) { 1 })
 p "Spark::query_stream squared limit=12 $sn3 rows"
 
@@ -126,15 +126,15 @@ p "Spark::query_stream squared limit=12 $sn3 rows"
 p "Spark::query_scalar avg=" . Spark::query_scalar("SELECT AVG(id) FROM range(1,11)")
 
 # ── Spark::query_col (filtered) ──
-my @even = Spark::query_col("SELECT id FROM range(10) WHERE id % 2 = 0")
+val @even = Spark::query_col("SELECT id FROM range(10) WHERE id % 2 = 0")
 p "Spark::query_col even ids=" . join(",", @even)
 
 # ── Spark::dump (order only) ──
-my @dump4 = Spark::dump("demo_t", order_by => "id ASC")
+val @dump4 = Spark::dump("demo_t", order_by => "id ASC")
 p "Spark::dump order ASC all #{len(@dump4)} rows"
 
 # ── Spark::schema (demo_u) ──
-my ($sch_u) = Spark::schema("demo_u")
+val ($sch_u) = Spark::schema("demo_u")
 p "Spark::schema demo_u cols: " . join(",", map { $_->{name} } @{ $sch_u->{columns} // [] })
 
 # ── Spark::execute (drop prep) ──
@@ -146,27 +146,27 @@ Spark::execute("DROP TABLE demo_v")
 p "Spark::ping conf: " . (Spark::ping(conf => { "spark.sql.shuffle.partitions" => "2" }) ? "alive" : "down")
 
 # ── Spark::query_one (limit path) ──
-my ($one3) = Spark::query_one("SELECT id FROM range(1000) WHERE id = 999")
+val ($one3) = Spark::query_one("SELECT id FROM range(1000) WHERE id = 999")
 p "Spark::query_one id=999 found=$one3->{id}"
 
 # ── Spark::query_scalar (avg) ──
 p "Spark::query_scalar avg range=" . Spark::query_scalar("SELECT AVG(x) FROM range(1,11) AS t(x)")
 
 # ── Spark::dump (where only) ──
-my @dump5 = Spark::dump("demo_t", where => "doubled >= 4")
+val @dump5 = Spark::dump("demo_t", where => "doubled >= 4")
 p "Spark::dump where doubled>=4 #{len(@dump5)} rows"
 
 # ── Spark::tables (all demo tables) ──
-my @all_tbls = Spark::tables()
+val @all_tbls = Spark::tables()
 p "Spark::tables total=#{len(@all_tbls)} demo=" .
     join(",", grep { $_ =~ /^demo_/ } @all_tbls)
 
 # ── Spark::databases (detail) ──
-my @dbs = Spark::databases()
+val @dbs = Spark::databases()
 p "Spark::databases #{len(@dbs)}: " . join(",", @dbs)
 
 # ── Spark::query_stream (second pass) ──
-my $sn4 = Spark::query_stream("SELECT id FROM range(15) WHERE id < 10",
+val $sn4 = Spark::query_stream("SELECT id FROM range(15) WHERE id < 10",
     callback => sub ($r) { 1 })
 p "Spark::query_stream filtered $sn4 rows"
 

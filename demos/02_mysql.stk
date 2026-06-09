@@ -29,16 +29,16 @@ MySQL::execute("
         score DOUBLE
     )
 ")
-my ($ex) = MySQL::execute(
+val ($ex) = MySQL::execute(
     "INSERT INTO demo_people (name, score) VALUES (?, ?), (?, ?)",
     bind => ["alice", 98.5, "bob", 87.0],
 )
 p "MySQL::execute bind affected=$ex->{affected_rows} last_id=$ex->{last_insert_id}"
-my ($ex2) = MySQL::execute("UPDATE demo_people SET score = score + 1 WHERE name = 'alice'")
+val ($ex2) = MySQL::execute("UPDATE demo_people SET score = score + 1 WHERE name = 'alice'")
 p "MySQL::execute plain affected=$ex2->{affected_rows}"
 
 # ── MySQL::insert_many ──
-my ($im) = MySQL::insert_many("demo_people", [
+val ($im) = MySQL::insert_many("demo_people", [
     { name => "charlie", score => 91.2 },
     { name => "dana",    score => 76.8 },
     { name => "eve",     score => 100.0 },
@@ -46,34 +46,34 @@ my ($im) = MySQL::insert_many("demo_people", [
 p "MySQL::insert_many affected=$im->{affected_rows}"
 
 # ── MySQL::query ──
-my @rows = MySQL::query("SELECT id, name, score FROM demo_people ORDER BY score DESC")
+val @rows = MySQL::query("SELECT id, name, score FROM demo_people ORDER BY score DESC")
 p "MySQL::query #{len(@rows)} rows top=$rows[0]->{name}"
-my @rows_lim = MySQL::query("SELECT name FROM demo_people ORDER BY name", limit => 3)
+val @rows_lim = MySQL::query("SELECT name FROM demo_people ORDER BY name", limit => 3)
 p "MySQL::query limit=3 names=" . join(",", map { $_->{name} } @rows_lim)
-my @rows_bind = MySQL::query(
+val @rows_bind = MySQL::query(
     "SELECT name, score FROM demo_people WHERE score > ? ORDER BY score DESC",
     bind => [90], limit => 2,
 )
 p "MySQL::query bind+limit #{len(@rows_bind)} rows (score>90)"
 
 # ── MySQL::query (columnar) ──
-my ($cw) = MySQL::query("SELECT name, score FROM demo_people", columnar => 1)
-my @ck = sort keys %{ $cw->{columns} // {} }
+val ($cw) = MySQL::query("SELECT name, score FROM demo_people", columnar => 1)
+val @ck = sort keys %{ $cw->{columns} // {} }
 p "MySQL::query columnar cols: " . join(",", @ck)
-my ($cw2) = MySQL::query("SELECT name FROM demo_people ORDER BY name", columnar => 1, limit => 2)
+val ($cw2) = MySQL::query("SELECT name FROM demo_people ORDER BY name", columnar => 1, limit => 2)
 p "MySQL::query columnar limit=2 cols: " . join(",", sort keys %{ $cw2->{columns} // {} })
 
 # ── MySQL::query (with_meta) ──
-my ($meta) = MySQL::query("SELECT * FROM demo_people LIMIT 2", with_meta => 1)
+val ($meta) = MySQL::query("SELECT * FROM demo_people LIMIT 2", with_meta => 1)
 p "MySQL::query with_meta rows=#{len($meta->{rows})} cols=#{len($meta->{meta}{columns} // [])}"
-my ($meta2) = MySQL::query("SELECT name, score FROM demo_people WHERE score > ?",
+val ($meta2) = MySQL::query("SELECT name, score FROM demo_people WHERE score > ?",
     bind => [85], with_meta => 1, limit => 3)
 p "MySQL::query with_meta+bind+limit rows=#{len($meta2->{rows})}"
 
 # ── MySQL::query_one ──
-my ($one) = MySQL::query_one("SELECT name, score FROM demo_people ORDER BY score DESC LIMIT 1")
+val ($one) = MySQL::query_one("SELECT name, score FROM demo_people ORDER BY score DESC LIMIT 1")
 p "MySQL::query_one $one->{name}=$one->{score}"
-my ($one2) = MySQL::query_one(
+val ($one2) = MySQL::query_one(
     "SELECT name FROM demo_people WHERE name = ?",
     bind => ["bob"],
 )
@@ -85,19 +85,19 @@ p "MySQL::query_scalar bind max=" .
     MySQL::query_scalar("SELECT MAX(score) FROM demo_people WHERE score < ?", bind => [99])
 
 # ── MySQL::query_col ──
-my @names = MySQL::query_col("SELECT name FROM demo_people ORDER BY name")
+val @names = MySQL::query_col("SELECT name FROM demo_people ORDER BY name")
 p "MySQL::query_col all=" . join(",", @names)
-my @top = MySQL::query_col(
+val @top = MySQL::query_col(
     "SELECT name FROM demo_people WHERE score > ? ORDER BY score DESC",
     bind => [90], limit => 2,
 )
 p "MySQL::query_col bind+limit=" . join(",", @top)
 
 # ── MySQL::query_stream ──
-my $stream_n = MySQL::query_stream("SELECT name FROM demo_people ORDER BY name",
+val $stream_n = MySQL::query_stream("SELECT name FROM demo_people ORDER BY name",
     callback => sub ($r) { p "  stream: $r->{name}" })
 p "MySQL::query_stream $stream_n rows"
-my $stream_n2 = MySQL::query_stream(
+val $stream_n2 = MySQL::query_stream(
     "SELECT name, score FROM demo_people WHERE score >= ?",
     bind => [90], limit => 5,
     callback => sub ($r) { 1 },
@@ -105,13 +105,13 @@ my $stream_n2 = MySQL::query_stream(
 p "MySQL::query_stream bind+limit $stream_n2 rows"
 
 # ── MySQL::schema ──
-my ($sch) = MySQL::schema("demo_people")
+val ($sch) = MySQL::schema("demo_people")
 p "MySQL::schema columns: " . join(",", map { $_->{name} } @{ $sch->{columns} })
 
 # ── MySQL::dump ──
-my @dump = MySQL::dump("demo_people", where => "score > 90", order_by => "score DESC", limit => 3)
+val @dump = MySQL::dump("demo_people", where => "score > 90", order_by => "score DESC", limit => 3)
 p "MySQL::dump where+order+limit #{len(@dump)} rows"
-my @dump2 = MySQL::dump("demo_people", columns => ["name", "score"], limit => 2, order_by => "name")
+val @dump2 = MySQL::dump("demo_people", columns => ["name", "score"], limit => 2, order_by => "name")
 p "MySQL::dump columns+limit #{len(@dump2)} rows"
 
 # ── MySQL::tables ──
@@ -121,17 +121,17 @@ p "MySQL::tables: " . join(", ", grep { $_ eq "demo_people" } MySQL::tables())
 p "MySQL::databases: " . join(", ", MySQL::databases())
 
 # ── MySQL::exec_file ──
-my $sql = "/tmp/stryke-demo-mysql-$$.sql"
-open my $fh, ">", $sql or die $!
+val $sql = "/tmp/stryke-demo-mysql-$$.sql"
+open val $fh, ">", $sql or die $!
 print $fh "UPDATE demo_people SET score = score + 0.1 WHERE name = 'bob';\n"
 print $fh "UPDATE demo_people SET score = score + 0.1 WHERE name = 'dana';\n"
 close $fh
-my @ef = MySQL::exec_file($sql)
+val @ef = MySQL::exec_file($sql)
 p "MySQL::exec_file #{len(@ef)} statement(s)"
 unlink $sql
 
 # ── MySQL::query_one (bind+limit via query path) ──
-my ($bound_one) = MySQL::query_one(
+val ($bound_one) = MySQL::query_one(
     "SELECT name, score FROM demo_people WHERE score >= ? ORDER BY score DESC",
     bind => [90],
 )
@@ -142,39 +142,39 @@ p "MySQL::query_scalar min=" .
     MySQL::query_scalar("SELECT MIN(score) FROM demo_people WHERE name LIKE ?", bind => ["%a%"])
 
 # ── MySQL::dump (columns only) ──
-my @dump3 = MySQL::dump("demo_people", columns => ["name"], where => "score < 90", limit => 5)
+val @dump3 = MySQL::dump("demo_people", columns => ["name"], where => "score < 90", limit => 5)
 p "MySQL::dump columns=name where score<90 #{len(@dump3)} rows"
 
 # ── MySQL::schema (re-check after mutations) ──
-my ($sch2) = MySQL::schema("demo_people")
+val ($sch2) = MySQL::schema("demo_people")
 p "MySQL::schema indexes=#{len($sch2->{indexes} // [])}"
 
 # ── MySQL::databases (re-list) ──
 p "MySQL::databases #{len(MySQL::databases())} visible"
 
 # ── MySQL::query_stream (limit only) ──
-my $sn3 = MySQL::query_stream("SELECT name, score FROM demo_people ORDER BY score DESC",
+val $sn3 = MySQL::query_stream("SELECT name, score FROM demo_people ORDER BY score DESC",
     limit => 2, callback => sub ($r) { p "  top: $r->{name}=$r->{score}" })
 p "MySQL::query_stream limit=2 $sn3 rows"
 
 # ── MySQL::insert_many (second batch) ──
-my ($im2) = MySQL::insert_many("demo_people", [{ name => "frank", score => 82.0 }])
+val ($im2) = MySQL::insert_many("demo_people", [{ name => "frank", score => 82.0 }])
 p "MySQL::insert_many frank affected=$im2->{affected_rows}"
 
 # ── MySQL::execute (plain update) ──
-my ($ex3) = MySQL::execute("UPDATE demo_people SET score = 100 WHERE name = 'eve'")
+val ($ex3) = MySQL::execute("UPDATE demo_people SET score = 100 WHERE name = 'eve'")
 p "MySQL::execute eve score=100 affected=$ex3->{affected_rows}"
 
 # ── MySQL::query_col (limit) ──
-my @scores = MySQL::query_col("SELECT score FROM demo_people ORDER BY score DESC", limit => 3)
+val @scores = MySQL::query_col("SELECT score FROM demo_people ORDER BY score DESC", limit => 3)
 p "MySQL::query_col top scores=" . join(",", @scores)
 
 # ── MySQL::dump (order only) ──
-my @dump4 = MySQL::dump("demo_people", order_by => "name ASC", limit => 10)
+val @dump4 = MySQL::dump("demo_people", order_by => "name ASC", limit => 10)
 p "MySQL::dump order name #{len(@dump4)} rows"
 
 # ── MySQL::query (bind between) ──
-my @bind2 = MySQL::query(
+val @bind2 = MySQL::query(
     "SELECT name FROM demo_people WHERE score BETWEEN ? AND ? ORDER BY name",
     bind => [80, 95], limit => 5,
 )
@@ -185,7 +185,7 @@ p "MySQL::query_scalar high=" .
     MySQL::query_scalar("SELECT COUNT(*) FROM demo_people WHERE score > ?", bind => [95])
 
 # ── MySQL::tables (re-list) ──
-my @tbls = MySQL::tables()
+val @tbls = MySQL::tables()
 p "MySQL::tables count=#{len(@tbls)} has demo_people=" .
     (grep { $_ eq "demo_people" } @tbls ? "yes" : "no")
 

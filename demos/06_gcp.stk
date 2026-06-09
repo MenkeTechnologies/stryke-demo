@@ -9,9 +9,9 @@ use GCP
 use GCP::Storage
 use GCP::PubSub
 
-my $bucket = $ARGV[0]
-my $sub    = $ARGV[1]
-my $topic  = $ARGV[2]
+val $bucket = $ARGV[0]
+val $sub    = $ARGV[1]
+val $topic  = $ARGV[2]
 
 p "── stryke-gcp demo (full API) ──"
 
@@ -28,7 +28,7 @@ p "GCP::version " . GCP::version()
 p "GCP::ping: " . (GCP::ping() ? "ok" : "no creds")
 
 # ── GCP::auth ──
-my ($auth) = GCP::auth()
+val ($auth) = GCP::auth()
 p "GCP::auth project=" . ($auth->{project_id} // "?") .
   " email=" . ($auth->{client_email} // $auth->{account} // "?")
 
@@ -49,12 +49,12 @@ unless (defined $bucket) {
     exit 0
 }
 
-my $uri  = "$bucket/stryke-demo-$$.txt"
-my $uri2 = "$bucket/stryke-demo-file-$$.txt"
-my $body = "hello stryke at " . time()
-my $local_in  = "/tmp/stryke-demo-gcp-in-$$.txt"
-my $local_out = "/tmp/stryke-demo-gcp-out-$$.txt"
-open my $lfh, ">", $local_in or die $!
+val $uri  = "$bucket/stryke-demo-$$.txt"
+val $uri2 = "$bucket/stryke-demo-file-$$.txt"
+val $body = "hello stryke at " . time()
+val $local_in  = "/tmp/stryke-demo-gcp-in-$$.txt"
+val $local_out = "/tmp/stryke-demo-gcp-out-$$.txt"
+open val $lfh, ">", $local_in or die $!
 print $lfh "from local file gcp\n"
 close $lfh
 
@@ -66,25 +66,25 @@ GCP::Storage::put $uri2, input => $local_in,
 p "GCP::Storage::put input file ok"
 
 # ── GCP::Storage::get ──
-my $back = GCP::Storage::get($uri)
+val $back = GCP::Storage::get($uri)
 p "GCP::Storage::get data match=" . ($back eq $body ? "yes" : "no")
-my $outpath = GCP::Storage::get($uri2, output => $local_out)
+val $outpath = GCP::Storage::get($uri2, output => $local_out)
 p "GCP::Storage::get output file=$outpath"
 
 # ── GCP::Storage::head ──
-my ($meta) = GCP::Storage::head($uri)
+val ($meta) = GCP::Storage::head($uri)
 p "GCP::Storage::head size=$meta->{size} type=$meta->{content_type}"
 
 # ── GCP::Storage::ls ──
-my @items = GCP::Storage::ls $bucket, limit => 5, delimiter => "/"
+val @items = GCP::Storage::ls $bucket, limit => 5, delimiter => "/"
 p "GCP::Storage::ls limit=5 delimiter=/ #{len(@items)} entries"
-my @items2 = GCP::Storage::ls $bucket, limit => 10
+val @items2 = GCP::Storage::ls $bucket, limit => 10
 p "GCP::Storage::ls limit=10 #{len(@items2)} entries"
-my @items3 = GCP::Storage::ls $bucket, limit => 3, page_size => 10
+val @items3 = GCP::Storage::ls $bucket, limit => 3, page_size => 10
 p "GCP::Storage::ls page_size=10 limit=3 #{len(@items3)} entries"
 
 # ── GCP::Storage::buckets ──
-my @buckets = GCP::Storage::buckets()
+val @buckets = GCP::Storage::buckets()
 p "GCP::Storage::buckets #{len(@buckets)} visible"
 
 # ── GCP::Storage::rm ──
@@ -95,22 +95,22 @@ unlink $local_in if -e $local_in
 unlink $local_out if -e $local_out
 
 # ── GCP::PubSub::topics ──
-my @topics = GCP::PubSub::topics()
+val @topics = GCP::PubSub::topics()
 p "GCP::PubSub::topics #{len(@topics)}"
 
 # ── GCP::PubSub::subs ──
-my @subs = GCP::PubSub::subs()
+val @subs = GCP::PubSub::subs()
 p "GCP::PubSub::subs #{len(@subs)}"
 
 # ── GCP::PubSub::publish ──
 if (defined $topic) {
-    my ($pub) = GCP::PubSub::publish($topic, "hello from stryke-demo",
+    val ($pub) = GCP::PubSub::publish($topic, "hello from stryke-demo",
         attrs => { src => "demo", run => "$$" })
     p "GCP::PubSub::publish id=$pub->{message_id}"
-    my ($pub2) = GCP::PubSub::publish($topic, "second message",
+    val ($pub2) = GCP::PubSub::publish($topic, "second message",
         attrs => { src => "demo" }, ordering_key => "demo-key")
     p "GCP::PubSub::publish ordering_key id=$pub2->{message_id}"
-    my ($pub3) = GCP::PubSub::publish($topic, "third message", attrs => { run => "$$" })
+    val ($pub3) = GCP::PubSub::publish($topic, "third message", attrs => { run => "$$" })
     p "GCP::PubSub::publish attrs only id=$pub3->{message_id}"
 } else {
     p "GCP::PubSub::publish skipped (pass topic as arg 3)"
@@ -122,42 +122,42 @@ unless (defined $sub) {
 }
 
 # ── GCP::PubSub::pull ──
-my @pulled = GCP::PubSub::pull($sub, max => 5)
+val @pulled = GCP::PubSub::pull($sub, max => 5)
 p "GCP::PubSub::pull max=5 #{len(@pulled)} msg(s)"
 if (@pulled) {
-    my @ids = map { $_->{ack_id} } @pulled
+    val @ids = map { $_->{ack_id} } @pulled
     GCP::PubSub::ack($sub, \@ids)
     p "GCP::PubSub::ack #{len(@ids)} id(s)"
 }
-my @pulled2 = GCP::PubSub::pull($sub, max => 3, deadline => 10)
+val @pulled2 = GCP::PubSub::pull($sub, max => 3, deadline => 10)
 p "GCP::PubSub::pull deadline=10 #{len(@pulled2)} msg(s)"
 if (@pulled2) {
     GCP::PubSub::ack($sub, [map { $_->{ack_id} } @pulled2])
 }
 
 # ── GCP::PubSub::pump ──
-my $pn = GCP::PubSub::pump($sub, iterations => 2, max => 5,
+val $pn = GCP::PubSub::pump($sub, iterations => 2, max => 5,
     callback => sub ($m) { p "  pump: $m->{message_id}" })
 p "GCP::PubSub::pump handled $pn"
-my $pn2 = GCP::PubSub::pump($sub, iterations => 1, max => 2, deadline => 5,
+val $pn2 = GCP::PubSub::pump($sub, iterations => 1, max => 2, deadline => 5,
     callback => sub ($m) { 1 })
 p "GCP::PubSub::pump deadline=5 handled $pn2"
 
 # ── GCP::PubSub::pull (ack auto variant) ──
 if (defined $sub) {
-    my @auto = GCP::PubSub::pull($sub, max => 1, ack => 1)
+    val @auto = GCP::PubSub::pull($sub, max => 1, ack => 1)
     p "GCP::PubSub::pull ack=1 max=1 #{len(@auto)} msg(s)"
 }
 
 # ── GCP::PubSub::subs (detail) ──
-for my $i (0 .. (len(@subs) > 2 ? 2 : len(@subs) - 1)) {
-    my $s = $subs[$i]
-    my $name = ref($s) eq "HASH" ? ($s->{name} // "?") : $s
+for val $i (0 .. (len(@subs) > 2 ? 2 : len(@subs) - 1)) {
+    val $s = $subs[$i]
+    val $name = ref($s) eq "HASH" ? ($s->{name} // "?") : $s
     p "  sub: $name"
 }
 
 # ── GCP::PubSub::topics (detail) ──
-for my $i (0 .. (len(@topics) > 2 ? 2 : len(@topics) - 1)) {
+for val $i (0 .. (len(@topics) > 2 ? 2 : len(@topics) - 1)) {
     p "  topic: $topics[$i]"
 }
 

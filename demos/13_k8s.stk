@@ -15,7 +15,7 @@ p "K8s::helper_path " . K8s::helper_path()
 p "K8s::ensure_built " . K8s::ensure_built()
 
 # ── K8s::version ──
-my ($ver) = K8s::version()
+val ($ver) = K8s::version()
 p "K8s::version " . $ver->{gitVersion}
 
 # ── K8s::ping ──
@@ -26,7 +26,7 @@ p "K8s::ping ok"
 p "K8s::current_context " . K8s::current_context()
 
 # ── K8s::contexts ──
-my @ctx = K8s::contexts()
+val @ctx = K8s::contexts()
 p "K8s::contexts #{len(@ctx)}"
 if (@ctx) {
     p "  first context: $ctx[0]->{name}"
@@ -36,10 +36,10 @@ if (@ctx) {
 p "K8s::namespaces #{len(K8s::namespaces())}"
 
 # ── K8s::api_resources ──
-my @ar = K8s::api_resources()
+val @ar = K8s::api_resources()
 p "K8s::api_resources #{len(@ar)}"
 
-my $ns = "stryke-demo-$$"
+val $ns = "stryke-demo-$$"
 
 # ── K8s::apply ──
 K8s::apply { apiVersion => "v1", kind => "Namespace", metadata => { name => $ns } }
@@ -88,15 +88,15 @@ K8s::create {
 p "K8s::create pod/oneshot"
 
 # ── K8s::get ──
-my @cms = K8s::get("configmaps", namespace => $ns)
+val @cms = K8s::get("configmaps", namespace => $ns)
 p "K8s::get configmaps #{len(@cms)}"
-my @pods = K8s::get("pods", namespace => $ns, label_selector => "app=echo")
+val @pods = K8s::get("pods", namespace => $ns, label_selector => "app=echo")
 p "K8s::get pods label_selector=app=echo #{len(@pods)}"
-my @pods_lim = K8s::get("pods", namespace => $ns, limit => 5)
+val @pods_lim = K8s::get("pods", namespace => $ns, limit => 5)
 p "K8s::get pods limit=5 #{len(@pods_lim)}"
 
 # ── K8s::get_one ──
-my ($cm) = K8s::get_one("configmap", "cfg", namespace => $ns)
+val ($cm) = K8s::get_one("configmap", "cfg", namespace => $ns)
 p "K8s::get_one cfg hello=$cm->{data}{hello}"
 
 # ── K8s::replace ──
@@ -105,21 +105,21 @@ K8s::replace $cm, namespace => $ns
 p "K8s::replace cfg v=" . K8s::get_one("configmap", "cfg", namespace => $ns)->{data}{v}
 
 # ── K8s::scale ──
-my ($sc) = K8s::scale("deploy", "echo", 2, namespace => $ns)
+val ($sc) = K8s::scale("deploy", "echo", 2, namespace => $ns)
 p "K8s::scale echo replicas=$sc->{spec}{replicas}"
-my ($sc2) = K8s::scale("deployment", "echo", 1, namespace => $ns)
+val ($sc2) = K8s::scale("deployment", "echo", 1, namespace => $ns)
 p "K8s::scale back replicas=$sc2->{spec}{replicas}"
 
 # ── K8s::watch ──
-my $wn = K8s::watch("pods", namespace => $ns, label_selector => "app=echo",
+val $wn = K8s::watch("pods", namespace => $ns, label_selector => "app=echo",
     callback => sub ($e) { p "  watch $e->{type} $e->{object}{metadata}{name}" })
 p "K8s::watch label_selector=app=echo $wn events"
-my $wn2 = K8s::watch("pods", namespace => $ns, field_selector => "status.phase=Running",
+val $wn2 = K8s::watch("pods", namespace => $ns, field_selector => "status.phase=Running",
     callback => sub ($e) { 1 })
 p "K8s::watch field_selector=Running $wn2 events"
 
 # ── K8s::get (field_selector) ──
-my @running = K8s::get("pods", namespace => $ns, field_selector => "status.phase=Running")
+val @running = K8s::get("pods", namespace => $ns, field_selector => "status.phase=Running")
 p "K8s::get field_selector=Running #{len(@running)} pods"
 
 # ── K8s::namespaces (re-list) ──
@@ -134,9 +134,9 @@ if (@ar) {
 }
 
 # Wait for a running echo pod.
-my $pod
-for my $i (1..30) {
-    my @epods = K8s::get("pods", namespace => $ns, label_selector => "app=echo")
+var $pod
+for val $i (1..30) {
+    val @epods = K8s::get("pods", namespace => $ns, label_selector => "app=echo")
     if (@epods && ($epods[0]->{status}{phase} // "") eq "Running") {
         $pod = $epods[0]->{metadata}{name}
         last
@@ -146,33 +146,33 @@ for my $i (1..30) {
 
 if (defined $pod) {
     # ── K8s::logs ──
-    my $logs = K8s::logs($pod, namespace => $ns, tail => 5)
+    val $logs = K8s::logs($pod, namespace => $ns, tail => 5)
     p "K8s::logs tail=5: " . (split /\n/, $logs)[0]
-    my $logs2 = K8s::logs($pod, namespace => $ns, tail => 3, timestamps => 1)
+    val $logs2 = K8s::logs($pod, namespace => $ns, tail => 3, timestamps => 1)
     p "K8s::logs timestamps lines=" . len([split /\n/, $logs2])
-    my $logs3 = K8s::logs($pod, namespace => $ns, tail => 10, previous => 1)
+    val $logs3 = K8s::logs($pod, namespace => $ns, tail => 10, previous => 1)
     p "K8s::logs previous=1 len=" . length($logs3 // "")
 } else {
     p "K8s::logs skipped (no running pod)"
 }
 
 # ── K8s::logs_follow ──
-for my $i (1..15) {
-    my $op = K8s::get_one("pod", "oneshot", namespace => $ns)
+for val $i (1..15) {
+    val $op = K8s::get_one("pod", "oneshot", namespace => $ns)
     last if ($op->{status}{phase} // "") =~ /^(Succeeded|Failed)$/
     sleep 1
 }
-my $lf = K8s::logs_follow("oneshot", namespace => $ns, tail => 5,
+val $lf = K8s::logs_follow("oneshot", namespace => $ns, tail => 5,
     callback => sub ($line) { p "  logs_follow: $line" if $line ne "" })
 p "K8s::logs_follow tail=5 $lf line(s)"
-my $lf2 = K8s::logs_follow("oneshot", namespace => $ns, tail => 3, timestamps => 1,
+val $lf2 = K8s::logs_follow("oneshot", namespace => $ns, tail => 3, timestamps => 1,
     callback => sub ($line) { 1 })
 p "K8s::logs_follow timestamps $lf2 line(s)"
 
 if (defined $pod) {
     # ── K8s::exec ──
     eval {
-        my $en = K8s::exec($pod, ["wget", "-qO-", "http://localhost:5678"],
+        val $en = K8s::exec($pod, ["wget", "-qO-", "http://localhost:5678"],
             namespace => $ns,
             callback  => sub ($s, $d) {
                 $d =~ s/\s+$//
@@ -180,7 +180,7 @@ if (defined $pod) {
             })
         p "K8s::exec chunks=$en"
     }
-    my $en2 = K8s::exec($pod, ["echo", "hello-from-stryke"],
+    val $en2 = K8s::exec($pod, ["echo", "hello-from-stryke"],
         namespace => $ns, container => "main",
         callback => sub ($s, $d) { 1 })
     p "K8s::exec container=main chunks=$en2"

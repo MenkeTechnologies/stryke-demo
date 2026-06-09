@@ -20,7 +20,7 @@ p "Mongo::version " . Mongo::version()
 exit 1 unless Mongo::ping()
 p "Mongo::ping ok"
 
-my $t = "demo/people_$$"
+val $t = "demo/people_$$"
 
 # ── Mongo::insert_one ──
 Mongo::insert_one($t, { name => "alice", age => 30, role => "admin" })
@@ -43,27 +43,27 @@ p "Mongo::count filter role=admin " .
     Mongo::count($t, filter => { role => "admin" })
 
 # ── Mongo::find_one ──
-my ($one) = Mongo::find_one($t, filter => { name => "alice" })
+val ($one) = Mongo::find_one($t, filter => { name => "alice" })
 p "Mongo::find_one alice age=$one->{age}"
-my ($one2) = Mongo::find_one($t,
+val ($one2) = Mongo::find_one($t,
     filter     => { name => "bob" },
     projection => { name => 1, age => 1, _id => 0 },
 )
 p "Mongo::find_one projection name=$one2->{name}"
-my ($one3) = Mongo::find_one($t,
+val ($one3) = Mongo::find_one($t,
     filter => { age => { '$gte' => 30 } },
     sort   => { age => -1 },
 )
 p "Mongo::find_one sort age=$one3->{name}"
 
 # ── Mongo::find ──
-my @over28 = Mongo::find($t,
+val @over28 = Mongo::find($t,
     filter => { age => { '$gt' => 28 } },
     sort   => { age => -1 },
     limit  => 10,
 )
 p "Mongo::find over-28: #{len(@over28)} docs"
-my @proj = Mongo::find($t,
+val @proj = Mongo::find($t,
     filter     => {},
     projection => { name => 1, _id => 0 },
     skip       => 1,
@@ -71,7 +71,7 @@ my @proj = Mongo::find($t,
 )
 p "Mongo::find projection+skip+limit: #{len(@proj)} names=" .
     join(",", map { $_->{name} } @proj)
-my @sorted = Mongo::find($t,
+val @sorted = Mongo::find($t,
     filter => { role => "user" },
     sort   => { name => 1 },
     limit  => 5,
@@ -80,19 +80,19 @@ my @sorted = Mongo::find($t,
 p "Mongo::find role=user sort+limit: #{len(@sorted)} docs"
 
 # ── Mongo::find_stream ──
-my $sn = Mongo::find_stream($t,
+val $sn = Mongo::find_stream($t,
     filter   => {},
     callback => sub ($d) { p "  stream: $d->{name}" },
 )
 p "Mongo::find_stream all $sn docs"
-my $sn2 = Mongo::find_stream($t,
+val $sn2 = Mongo::find_stream($t,
     filter   => { age => { '$gte' => 28 } },
     limit    => 2,
     sort     => { name => 1 },
     callback => sub ($d) { 1 },
 )
 p "Mongo::find_stream filter+limit $sn2 docs"
-my $sn3 = Mongo::find_stream($t,
+val $sn3 = Mongo::find_stream($t,
     filter     => {},
     projection => { name => 1, age => 1, _id => 0 },
     skip       => 2,
@@ -102,17 +102,17 @@ my $sn3 = Mongo::find_stream($t,
 p "Mongo::find_stream projection+skip $sn3 docs"
 
 # ── Mongo::aggregate ──
-my @groups = Mongo::aggregate($t, [
+val @groups = Mongo::aggregate($t, [
     { '$group' => { _id => '$role', n => { '$sum' => 1 } } },
     { '$sort'  => { n => -1 } },
 ])
 p "Mongo::aggregate by role #{len(@groups)} group(s)"
-my @avg = Mongo::aggregate($t, [
+val @avg = Mongo::aggregate($t, [
     { '$match' => { age => { '$gte' => 25 } } },
     { '$group' => { _id => undef, avg_age => { '$avg' => '$age' } } },
 ])
 p "Mongo::aggregate avg_age=" . ($avg[0]->{avg_age} // "?")
-my @top = Mongo::aggregate($t, [
+val @top = Mongo::aggregate($t, [
     { '$sort'  => { age => -1 } },
     { '$limit' => 2 },
     { '$project' => { name => 1, age => 1, _id => 0 } },
@@ -132,12 +132,12 @@ p "Mongo::update_one set eve tier=" .
     Mongo::find_one($t, filter => { name => "eve" })->{tier}
 
 # ── Mongo::update_many ──
-my ($um) = Mongo::update_many($t,
+val ($um) = Mongo::update_many($t,
     { age => { '$lt' => 30 } },
     { '$set' => { tier => "junior" } },
 )
 p "Mongo::update_many matched=$um->{matched_count}"
-my ($um2) = Mongo::update_many($t,
+val ($um2) = Mongo::update_many($t,
     { tier => "junior" },
     { '$inc' => { age => 1 } },
 )
@@ -168,7 +168,7 @@ Mongo::create_index($t, { tier => 1, age => 1 }, name => "tier_age_idx")
 p "Mongo::create_index compound tier+age ok"
 
 # ── Mongo::indexes ──
-my @ix = Mongo::indexes($t)
+val @ix = Mongo::indexes($t)
 p "Mongo::indexes #{len(@ix)}: " . join(",", map { $_->{name} } @ix)
 
 # ── Mongo::drop_index ──
@@ -178,27 +178,27 @@ Mongo::drop_index($t, "tier_age_idx")
 p "Mongo::drop_index tier_age_idx ok"
 
 # ── Mongo::list_databases ──
-my @dbs = Mongo::list_databases()
+val @dbs = Mongo::list_databases()
 p "Mongo::list_databases #{len(@dbs)}: " . join(",", map { $_->{name} } @dbs)
 
 # ── Mongo::list_collections ──
-my @colls = Mongo::list_collections("demo")
+val @colls = Mongo::list_collections("demo")
 p "Mongo::list_collections demo #{len(@colls)}: " . join(",", @colls)
 
 # ── Mongo::delete_one ──
-my ($d1) = Mongo::delete_one($t, { name => "bob" })
+val ($d1) = Mongo::delete_one($t, { name => "bob" })
 p "Mongo::delete_one bob deleted=$d1->{deleted_count}"
-my ($d1b) = Mongo::delete_one($t, { name => "newhire" })
+val ($d1b) = Mongo::delete_one($t, { name => "newhire" })
 p "Mongo::delete_one newhire deleted=$d1b->{deleted_count}"
-my ($d1c) = Mongo::delete_one($t, { name => "missing-ghost" })
+val ($d1c) = Mongo::delete_one($t, { name => "missing-ghost" })
 p "Mongo::delete_one missing deleted=$d1c->{deleted_count}"
 
 # ── Mongo::delete_many ──
-my ($dm) = Mongo::delete_many($t, { tier => "junior" })
+val ($dm) = Mongo::delete_many($t, { tier => "junior" })
 p "Mongo::delete_many tier=junior deleted=$dm->{deleted_count}"
-my ($dm2) = Mongo::delete_many($t, { role => "user" })
+val ($dm2) = Mongo::delete_many($t, { role => "user" })
 p "Mongo::delete_many role=user deleted=$dm2->{deleted_count}"
-my ($dm3) = Mongo::delete_many($t, {})
+val ($dm3) = Mongo::delete_many($t, {})
 p "Mongo::delete_many rest deleted=$dm3->{deleted_count}"
 
 p "done"

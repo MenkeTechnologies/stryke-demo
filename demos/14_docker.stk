@@ -15,7 +15,7 @@ p "Docker::helper_path " . Docker::helper_path()
 p "Docker::ensure_built " . Docker::ensure_built()
 
 # ── Docker::version ──
-my ($ver) = Docker::version()
+val ($ver) = Docker::version()
 p "Docker::version " . $ver->{Version}
 
 # ── Docker::ping ──
@@ -23,18 +23,18 @@ exit 1 unless Docker::ping()
 p "Docker::ping ok"
 
 # ── Docker::info ──
-my ($info) = Docker::info()
+val ($info) = Docker::info()
 p "Docker::info containers=$info->{Containers} images=$info->{Images}"
 
-my $name = "stryke-demo-$$"
-my $net  = "stryke-net-$$"
-my $vol  = "stryke-vol-$$"
-my $tag  = "stryke-demo-$$:local"
+val $name = "stryke-demo-$$"
+val $net  = "stryke-net-$$"
+val $vol  = "stryke-vol-$$"
+val $tag  = "stryke-demo-$$:local"
 
 # ── Docker::pull ──
-my @pull = Docker::pull("busybox:latest")
+val @pull = Docker::pull("busybox:latest")
 p "Docker::pull #{len(@pull)} events"
-my $pull_cb = Docker::pull("busybox:latest", platform => "linux/amd64",
+val $pull_cb = Docker::pull("busybox:latest", platform => "linux/amd64",
     callback => sub ($e) { 1 })
 p "Docker::pull platform+callback $pull_cb events"
 
@@ -43,9 +43,9 @@ Docker::tag("busybox:latest", $tag)
 p "Docker::tag $tag"
 
 # ── Docker::images ──
-my @imgs = Docker::images(limit => 5, filters => { reference => ["busybox"] })
+val @imgs = Docker::images(limit => 5, filters => { reference => ["busybox"] })
 p "Docker::images busybox refs: #{len(@imgs)}"
-my @imgs2 = Docker::images(all => 1, filters => { dangling => ["false"] })
+val @imgs2 = Docker::images(all => 1, filters => { dangling => ["false"] })
 p "Docker::images all dangling=false #{len(@imgs2)} refs"
 
 # ── Docker::network_create ──
@@ -69,7 +69,7 @@ p "Docker::volumes filter label: " .
     len(Docker::volumes(filters => { label => ["stryke.demo=14"] }))
 
 # ── Docker::create ──
-my ($created) = Docker::create("busybox:latest",
+val ($created) = Docker::create("busybox:latest",
     name    => "$name-lifecycle",
     cmd     => ["sleep", "3600"],
     network => $net,
@@ -90,7 +90,7 @@ Docker::restart("$name-lifecycle", time => 2)
 p "Docker::restart time=2 ok"
 
 # ── Docker::run ──
-my ($r) = Docker::run("busybox:latest",
+val ($r) = Docker::run("busybox:latest",
     name   => $name,
     cmd    => ["sh", "-c", "i=0; while true; do echo tick=\$i; i=\$((i+1)); sleep 1; done"],
     label  => ["stryke.demo=14"],
@@ -98,7 +98,7 @@ my ($r) = Docker::run("busybox:latest",
     rm     => 0,
 )
 p "Docker::run detach id=$r->{id}"
-my ($r2) = Docker::run("busybox:latest",
+val ($r2) = Docker::run("busybox:latest",
     name => "$name-rm",
     cmd  => ["echo", "oneshot-run"],
     rm   => 1,
@@ -106,23 +106,23 @@ my ($r2) = Docker::run("busybox:latest",
 p "Docker::run rm=1 id=$r2->{id}"
 
 # ── Docker::ps ──
-my @ps = Docker::ps(all => 1, filters => { label => ["stryke.demo=14"] })
+val @ps = Docker::ps(all => 1, filters => { label => ["stryke.demo=14"] })
 p "Docker::ps all+label #{len(@ps)} container(s)"
-my @ps2 = Docker::ps(limit => 3, size => 1)
+val @ps2 = Docker::ps(limit => 3, size => 1)
 p "Docker::ps limit=3 size #{len(@ps2)} container(s)"
 
 # ── Docker::inspect ──
-my ($ins) = Docker::inspect($name)
+val ($ins) = Docker::inspect($name)
 p "Docker::inspect state=$ins->{State}{Status}"
 
 # ── Docker::events ──
-my $since = time()
+val $since = time()
 sleep 1
-my $ev = Docker::events(since => $since, filters => { container => [$r->{id}] },
+val $ev = Docker::events(since => $since, filters => { container => [$r->{id}] },
     callback => sub ($e) { p "  event: $e->{Action} $e->{Actor}{Attributes}{name}" })
 p "Docker::events since+filter $ev event(s)"
 sleep 1
-my $ev2 = Docker::events(since => $since, until => time() + 1,
+val $ev2 = Docker::events(since => $since, until => time() + 1,
     filters => { type => ["container"] },
     callback => sub ($e) { 1 })
 p "Docker::events type=container $ev2 event(s)"
@@ -130,41 +130,41 @@ p "Docker::events type=container $ev2 event(s)"
 sleep 1
 
 # ── Docker::exec ──
-my ($exec) = Docker::exec($name, ["sh", "-c", "uname -a"],
+val ($exec) = Docker::exec($name, ["sh", "-c", "uname -a"],
     callback => sub ($s, $d) {
         $d =~ s/\s+$//
         p "  exec[$s]: $d" if $d ne ""
     })
 p "Docker::exec exit=$exec->{exit_code}"
-my ($exec2) = Docker::exec($name, ["echo", "hello"],
+val ($exec2) = Docker::exec($name, ["echo", "hello"],
     user => "0", workdir => "/",
     callback => sub ($s, $d) { 1 })
 p "Docker::exec user+workdir chunks=$exec2->{chunks}"
 
 # ── Docker::logs ──
-my $logs = Docker::logs($name, tail => "3")
+val $logs = Docker::logs($name, tail => "3")
 p "Docker::logs tail=3 lines=" . len([split /\n/, $logs])
-my $logs2 = Docker::logs($name, tail => "2", timestamps => 1, since => $since)
+val $logs2 = Docker::logs($name, tail => "2", timestamps => 1, since => $since)
 p "Docker::logs timestamps since lines=" . len([split /\n/, $logs2])
 
 # ── Docker::logs_follow ──
-my $lf_name = "$name-logfollow"
+val $lf_name = "$name-logfollow"
 Docker::create("busybox:latest", name => $lf_name, cmd => ["echo", "logfollow-ok"])
 Docker::start($lf_name)
 sleep 1
-my $lf = Docker::logs_follow($lf_name, tail => "5",
+val $lf = Docker::logs_follow($lf_name, tail => "5",
     callback => sub ($s, $d) {
         $d =~ s/\s+$//
         p "  logs_follow[$s]: $d" if $d ne ""
     })
 p "Docker::logs_follow $lf chunk(s)"
-my $lf2 = Docker::logs_follow($lf_name, tail => "3", timestamps => 1,
+val $lf2 = Docker::logs_follow($lf_name, tail => "3", timestamps => 1,
     callback => sub ($s, $d) { 1 })
 p "Docker::logs_follow timestamps $lf2 chunk(s)"
 Docker::rm($lf_name, force => 1)
 
 # ── Docker::stats ──
-my ($st) = Docker::stats($name)
+val ($st) = Docker::stats($name)
 p "Docker::stats mem=" . ($st->{memory_stats}{usage} // 0)
 
 # ── Docker::kill ──
@@ -194,7 +194,7 @@ p "Docker::volume_rm $vol"
 
 # ── Docker::push ──
 if ($ENV{STRYKE_DEMO_DOCKER_PUSH}) {
-    my $pn = Docker::push($ENV{STRYKE_DEMO_DOCKER_PUSH},
+    val $pn = Docker::push($ENV{STRYKE_DEMO_DOCKER_PUSH},
         callback => sub ($e) { 1 })
     p "Docker::push $pn events"
 } else {
@@ -203,7 +203,7 @@ if ($ENV{STRYKE_DEMO_DOCKER_PUSH}) {
 
 # ── Docker::build ──
 if ($ENV{STRYKE_DEMO_DOCKER_BUILD}) {
-    my $bn = Docker::build($ENV{STRYKE_DEMO_DOCKER_BUILD},
+    val $bn = Docker::build($ENV{STRYKE_DEMO_DOCKER_BUILD},
         tag => "stryke-build-test:latest", pull => 1, rm => 1,
         callback => sub ($e) { 1 })
     p "Docker::build pull+rm $bn events"
