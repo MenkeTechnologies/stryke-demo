@@ -5,8 +5,6 @@
 
 use DuckDB
 use Arrow
-use Arrow::Parquet
-use Arrow::CSV
 
 p "── stryke-duckdb demo (full API) ──"
 

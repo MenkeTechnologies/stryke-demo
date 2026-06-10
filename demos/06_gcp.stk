@@ -6,8 +6,7 @@
 # Needs real GCP creds (ADC). No local emulator.
 
 use GCP
-use GCP::Storage
-use GCP::PubSub
+
 
 val $bucket = $ARGV[0]
 val $fn    = $ARGV[1]

@@ -5,11 +5,6 @@
 # Admin ops (bucket/table/queue/lambda) use aws CLI — no stryke wrappers.
 
 use AWS
-use AWS::S3
-use AWS::Dynamo
-use AWS::SQS
-use AWS::STS
-use AWS::Lambda
 
 $ENV{AWS_ENDPOINT_URL} //= "http://localhost:4566"
 $ENV{AWS_REGION}       //= "us-east-1"
