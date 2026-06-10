@@ -1,7 +1,7 @@
 #!/usr/bin/env stryke
 # demos/06_gcp.stk — exercises every public stryke-gcp API fn.
 #
-# Run:  s demos/06_gcp.stk gs://bucket [projects/p/subscriptions/sub] [projects/p/topics/topic]
+# Run:  s demos/06_gcp.stk gs://bucket [projects/p/subscriptions/fn] [projects/p/topics/topic]
 #
 # Needs real GCP creds (ADC). No local emulator.
 
@@ -10,16 +10,12 @@ use GCP::Storage
 use GCP::PubSub
 
 val $bucket = $ARGV[0]
-val $sub    = $ARGV[1]
+val $fn    = $ARGV[1]
 val $topic  = $ARGV[2]
 
 p "── stryke-gcp demo (full API) ──"
 
-# ── GCP::helper_path ──
-p "GCP::helper_path " . GCP::helper_path()
 
-# ── GCP::ensure_built ──
-p "GCP::ensure_built " . GCP::ensure_built()
 
 # ── GCP::version ──
 p "GCP::version " . GCP::version()
@@ -27,9 +23,9 @@ p "GCP::version " . GCP::version()
 # ── GCP::ping ──
 p "GCP::ping: " . (GCP::ping() ? "ok" : "no creds")
 
-# ── GCP::auth ──
-val ($auth) = GCP::auth()
-p "GCP::auth project=" . ($auth->{project_id} // "?") .
+# ── GCP::identity ──
+val ($auth) = GCP::identity()
+p "GCP::identity project=" . ($auth->{project_id} // "?") .
   " email=" . ($auth->{client_email} // $auth->{account} // "?")
 
 # ── GCP::ping (project override) ──
@@ -116,36 +112,36 @@ if (defined $topic) {
     p "GCP::PubSub::publish skipped (pass topic as arg 3)"
 }
 
-unless (defined $sub) {
+unless (defined $fn) {
     p "GCP::PubSub::pull/ack/pump skipped (pass subscription as arg 2)"
     exit 0
 }
 
 # ── GCP::PubSub::pull ──
-val @pulled = GCP::PubSub::pull($sub, max => 5)
+val @pulled = GCP::PubSub::pull($fn, max => 5)
 p "GCP::PubSub::pull max=5 #{len(@pulled)} msg(s)"
 if (@pulled) {
     val @ids = map { $_->{ack_id} } @pulled
-    GCP::PubSub::ack($sub, \@ids)
+    GCP::PubSub::ack($fn, \@ids)
     p "GCP::PubSub::ack #{len(@ids)} id(s)"
 }
-val @pulled2 = GCP::PubSub::pull($sub, max => 3, deadline => 10)
+val @pulled2 = GCP::PubSub::pull($fn, max => 3, deadline => 10)
 p "GCP::PubSub::pull deadline=10 #{len(@pulled2)} msg(s)"
 if (@pulled2) {
-    GCP::PubSub::ack($sub, [map { $_->{ack_id} } @pulled2])
+    GCP::PubSub::ack($fn, [map { $_->{ack_id} } @pulled2])
 }
 
 # ── GCP::PubSub::pump ──
-val $pn = GCP::PubSub::pump($sub, iterations => 2, max => 5,
-    callback => sub ($m) { p "  pump: $m->{message_id}" })
+val $pn = GCP::PubSub::pump($fn, iterations => 2, max => 5,
+    callback => fn ($m) { p "  pump: $m->{message_id}" })
 p "GCP::PubSub::pump handled $pn"
-val $pn2 = GCP::PubSub::pump($sub, iterations => 1, max => 2, deadline => 5,
-    callback => sub ($m) { 1 })
+val $pn2 = GCP::PubSub::pump($fn, iterations => 1, max => 2, deadline => 5,
+    callback => fn ($m) { 1 })
 p "GCP::PubSub::pump deadline=5 handled $pn2"
 
 # ── GCP::PubSub::pull (ack auto variant) ──
-if (defined $sub) {
-    val @auto = GCP::PubSub::pull($sub, max => 1, ack => 1)
+if (defined $fn) {
+    val @auto = GCP::PubSub::pull($fn, max => 1, ack => 1)
     p "GCP::PubSub::pull ack=1 max=1 #{len(@auto)} msg(s)"
 }
 

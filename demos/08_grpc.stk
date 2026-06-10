@@ -9,7 +9,7 @@ use Grpc
 val $target = $ARGV[0] // "localhost:50051"
 val %opts   = (target => $target, plaintext => 1)
 
-sub try_call ($method, $req, %call_opts) {
+fn try_call ($method, $req, %call_opts) {
     var $reply = eval { Grpc::call($method, $req, %call_opts) }
     return $reply if defined $reply && ref($reply) eq "HASH"
     undef
@@ -17,11 +17,7 @@ sub try_call ($method, $req, %call_opts) {
 
 p "── stryke-grpc demo (full API) ──"
 
-# ── Grpc::helper_path ──
-p "Grpc::helper_path " . Grpc::helper_path()
 
-# ── Grpc::ensure_built ──
-p "Grpc::ensure_built " . Grpc::ensure_built()
 
 # ── Grpc::version ──
 p "Grpc::version " . Grpc::version()

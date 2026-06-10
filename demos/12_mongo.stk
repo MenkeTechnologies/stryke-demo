@@ -7,11 +7,7 @@ use Mongo
 
 p "── stryke-mongo demo (full API) ──"
 
-# ── Mongo::helper_path ──
-p "Mongo::helper_path " . Mongo::helper_path()
 
-# ── Mongo::ensure_built ──
-p "Mongo::ensure_built " . Mongo::ensure_built()
 
 # ── Mongo::version ──
 p "Mongo::version " . Mongo::version()
@@ -82,14 +78,14 @@ p "Mongo::find role=user sort+limit: #{len(@sorted)} docs"
 # ── Mongo::find_stream ──
 val $sn = Mongo::find_stream($t,
     filter   => {},
-    callback => sub ($d) { p "  stream: $d->{name}" },
+    callback => fn ($d) { p "  stream: $d->{name}" },
 )
 p "Mongo::find_stream all $sn docs"
 val $sn2 = Mongo::find_stream($t,
     filter   => { age => { '$gte' => 28 } },
     limit    => 2,
     sort     => { name => 1 },
-    callback => sub ($d) { 1 },
+    callback => fn ($d) { 1 },
 )
 p "Mongo::find_stream filter+limit $sn2 docs"
 val $sn3 = Mongo::find_stream($t,
@@ -97,7 +93,7 @@ val $sn3 = Mongo::find_stream($t,
     projection => { name => 1, age => 1, _id => 0 },
     skip       => 2,
     limit      => 3,
-    callback   => sub ($d) { 1 },
+    callback   => fn ($d) { 1 },
 )
 p "Mongo::find_stream projection+skip $sn3 docs"
 

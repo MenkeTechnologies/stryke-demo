@@ -8,11 +8,7 @@ use K8s
 
 p "── stryke-k8s demo (full API) ──"
 
-# ── K8s::helper_path ──
-p "K8s::helper_path " . K8s::helper_path()
 
-# ── K8s::ensure_built ──
-p "K8s::ensure_built " . K8s::ensure_built()
 
 # ── K8s::version ──
 val ($ver) = K8s::version()
@@ -112,10 +108,10 @@ p "K8s::scale back replicas=$sc2->{spec}{replicas}"
 
 # ── K8s::watch ──
 val $wn = K8s::watch("pods", namespace => $ns, label_selector => "app=echo",
-    callback => sub ($e) { p "  watch $e->{type} $e->{object}{metadata}{name}" })
+    callback => fn ($e) { p "  watch $e->{type} $e->{object}{metadata}{name}" })
 p "K8s::watch label_selector=app=echo $wn events"
 val $wn2 = K8s::watch("pods", namespace => $ns, field_selector => "status.phase=Running",
-    callback => sub ($e) { 1 })
+    callback => fn ($e) { 1 })
 p "K8s::watch field_selector=Running $wn2 events"
 
 # ── K8s::get (field_selector) ──
@@ -163,10 +159,10 @@ for val $i (1..15) {
     sleep 1
 }
 val $lf = K8s::logs_follow("oneshot", namespace => $ns, tail => 5,
-    callback => sub ($line) { p "  logs_follow: $line" if $line ne "" })
+    callback => fn ($line) { p "  logs_follow: $line" if $line ne "" })
 p "K8s::logs_follow tail=5 $lf line(s)"
 val $lf2 = K8s::logs_follow("oneshot", namespace => $ns, tail => 3, timestamps => 1,
-    callback => sub ($line) { 1 })
+    callback => fn ($line) { 1 })
 p "K8s::logs_follow timestamps $lf2 line(s)"
 
 if (defined $pod) {
@@ -174,7 +170,7 @@ if (defined $pod) {
     eval {
         val $en = K8s::exec($pod, ["wget", "-qO-", "http://localhost:5678"],
             namespace => $ns,
-            callback  => sub ($s, $d) {
+            callback  => fn ($s, $d) {
                 $d =~ s/\s+$//
                 p "  exec[$s]: $d" if $d ne ""
             })
@@ -182,7 +178,7 @@ if (defined $pod) {
     }
     val $en2 = K8s::exec($pod, ["echo", "hello-from-stryke"],
         namespace => $ns, container => "main",
-        callback => sub ($s, $d) { 1 })
+        callback => fn ($s, $d) { 1 })
     p "K8s::exec container=main chunks=$en2"
 }
 

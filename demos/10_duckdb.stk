@@ -10,11 +10,7 @@ use Arrow::CSV
 
 p "── stryke-duckdb demo (full API) ──"
 
-# ── DuckDB::helper_path ──
-p "DuckDB::helper_path " . DuckDB::helper_path()
 
-# ── DuckDB::ensure_built ──
-p "DuckDB::ensure_built " . DuckDB::ensure_built()
 
 # ── DuckDB::version ──
 p "DuckDB::version " . DuckDB::version()
@@ -72,10 +68,10 @@ p "DuckDB::query_col limit=5 " . join(",", @col2)
 
 # ── DuckDB::query_stream ──
 val $sn = DuckDB::query_stream("SELECT n FROM range(50) AS t(n)",
-    callback => sub ($r) { 1 })
+    callback => fn ($r) { 1 })
 p "DuckDB::query_stream $sn rows"
 val $sn2 = DuckDB::query_stream("SELECT n FROM range(100) AS t(n) WHERE n > ?",
-    bind => [90], limit => 5, callback => sub ($r) { 1 })
+    bind => [90], limit => 5, callback => fn ($r) { 1 })
 p "DuckDB::query_stream bind+limit $sn2 rows"
 
 val $tmp = "/tmp/stryke-demo-duckdb"
@@ -164,7 +160,7 @@ p "DuckDB::import auto csv rows=" .
 # ── DuckDB::query_stream (bind+limit) ──
 val $dsn = DuckDB::query_stream("SELECT n FROM range(?) AS t(n) WHERE n > ?",
     bind => [20, 15], limit => 3, db => $db,
-    callback => sub ($r) { p "  bind stream n=$r->{n}" })
+    callback => fn ($r) { p "  bind stream n=$r->{n}" })
 p "DuckDB::query_stream bind $dsn rows"
 
 # ── DuckDB::execute (bind update) ──

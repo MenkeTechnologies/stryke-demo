@@ -5,7 +5,7 @@
 
 use Redis
 
-sub tag_join ($key) {
+fn tag_join ($key) {
     var @m = Redis::smembers($key)
     @m = sort @m
     join ",", @m
@@ -13,11 +13,7 @@ sub tag_join ($key) {
 
 p "── stryke-redis demo (full API) ──"
 
-# ── Redis::helper_path ──
-p "Redis::helper_path " . Redis::helper_path()
 
-# ── Redis::ensure_built ──
-p "Redis::ensure_built " . Redis::ensure_built()
 
 # ── Redis::version ──
 p "Redis::version " . Redis::version()

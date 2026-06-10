@@ -7,11 +7,7 @@ use Postgres
 
 p "── stryke-postgres demo (full API) ──"
 
-# ── Postgres::helper_path ──
-p "Postgres::helper_path " . Postgres::helper_path()
 
-# ── Postgres::ensure_built ──
-p "Postgres::ensure_built " . Postgres::ensure_built()
 
 # ── Postgres::version ──
 p "Postgres::version " . Postgres::version()
@@ -95,12 +91,12 @@ p "Postgres::query_col bind+limit=" . join(",", @top)
 
 # ── Postgres::query_stream ──
 val $stream_n = Postgres::query_stream("SELECT name FROM demo_people ORDER BY name",
-    callback => sub ($r) { p "  stream: $r->{name}" })
+    callback => fn ($r) { p "  stream: $r->{name}" })
 p "Postgres::query_stream $stream_n rows"
 val $stream_n2 = Postgres::query_stream(
     "SELECT name, score FROM demo_people WHERE score >= \$1",
     bind => [90], limit => 5,
-    callback => sub ($r) { 1 },
+    callback => fn ($r) { 1 },
 )
 p "Postgres::query_stream bind+limit $stream_n2 rows"
 
@@ -156,7 +152,7 @@ p "Postgres::schema indexes=#{len($sch2->{indexes} // [])}"
 
 # ── Postgres::query_stream (limit) ──
 val $pgsn = Postgres::query_stream("SELECT name, score FROM demo_people ORDER BY score DESC",
-    limit => 2, callback => sub ($r) { p "  top: $r->{name}=$r->{score}" })
+    limit => 2, callback => fn ($r) { p "  top: $r->{name}=$r->{score}" })
 p "Postgres::query_stream limit=2 $pgsn rows"
 
 # ── Postgres::tables (schema filter) ──

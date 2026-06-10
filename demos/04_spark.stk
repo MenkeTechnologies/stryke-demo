@@ -9,11 +9,7 @@ use Arrow
 
 p "── stryke-spark demo (full API) ──"
 
-# ── Spark::helper_path ──
-p "Spark::helper_path " . Spark::helper_path()
 
-# ── Spark::ensure_built ──
-p "Spark::ensure_built " . Spark::ensure_built()
 
 # ── Spark::version ──
 p "Spark::version " . Spark::version()
@@ -65,10 +61,10 @@ p "Spark::query_col limit=4=" . join(",", @ids2)
 
 # ── Spark::query_stream ──
 val $sn = Spark::query_stream("SELECT id FROM range(10)",
-    callback => sub ($r) { 1 })
+    callback => fn ($r) { 1 })
 p "Spark::query_stream $sn rows"
 val $sn2 = Spark::query_stream("SELECT id FROM range(50)", limit => 8,
-    callback => sub ($r) { 1 })
+    callback => fn ($r) { 1 })
 p "Spark::query_stream limit=8 $sn2 rows"
 
 # ── Spark::execute ──
@@ -119,7 +115,7 @@ p "Spark::query read_files columnar cols=" . join(",", sort keys %{ $sum_col->{c
 
 # ── Spark::query_stream (limit variant) ──
 val $sn3 = Spark::query_stream("SELECT id, id*id AS sq FROM range(30)",
-    limit => 12, callback => sub ($r) { 1 })
+    limit => 12, callback => fn ($r) { 1 })
 p "Spark::query_stream squared limit=12 $sn3 rows"
 
 # ── Spark::query_scalar (aggregate) ──
@@ -167,7 +163,7 @@ p "Spark::databases #{len(@dbs)}: " . join(",", @dbs)
 
 # ── Spark::query_stream (second pass) ──
 val $sn4 = Spark::query_stream("SELECT id FROM range(15) WHERE id < 10",
-    callback => sub ($r) { 1 })
+    callback => fn ($r) { 1 })
 p "Spark::query_stream filtered $sn4 rows"
 
 # ── Spark::submit ──

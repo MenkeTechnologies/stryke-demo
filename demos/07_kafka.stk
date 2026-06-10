@@ -7,11 +7,7 @@ use Kafka
 
 p "── stryke-kafka demo (full API) ──"
 
-# ── Kafka::helper_path ──
-p "Kafka::helper_path " . Kafka::helper_path()
 
-# ── Kafka::ensure_built ──
-p "Kafka::ensure_built " . Kafka::ensure_built()
 
 # ── Kafka::version ──
 p "Kafka::version " . Kafka::version()
@@ -91,7 +87,7 @@ val $cs = Kafka::consume_stream($topic2,
     offset_reset => "earliest",
     max          => 5,
     idle_ms      => 5_000,
-    callback     => sub ($m) { p "  stream: $m->{value}" })
+    callback     => fn ($m) { p "  stream: $m->{value}" })
 p "Kafka::consume_stream $cs messages"
 val $cs2 = Kafka::consume_stream($topic,
     group        => "$grp-cb2",
@@ -99,7 +95,7 @@ val $cs2 = Kafka::consume_stream($topic,
     max          => 3,
     idle_ms      => 3_000,
     value_mode   => "string",
-    callback     => sub ($m) { 1 })
+    callback     => fn ($m) { 1 })
 p "Kafka::consume_stream value_mode=string $cs2 messages"
 
 # ── Kafka::groups ──

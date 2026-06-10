@@ -8,11 +8,7 @@ use Docker
 
 p "── stryke-docker demo (full API) ──"
 
-# ── Docker::helper_path ──
-p "Docker::helper_path " . Docker::helper_path()
 
-# ── Docker::ensure_built ──
-p "Docker::ensure_built " . Docker::ensure_built()
 
 # ── Docker::version ──
 val ($ver) = Docker::version()
@@ -35,7 +31,7 @@ val $tag  = "stryke-demo-$$:local"
 val @pull = Docker::pull("busybox:latest")
 p "Docker::pull #{len(@pull)} events"
 val $pull_cb = Docker::pull("busybox:latest", platform => "linux/amd64",
-    callback => sub ($e) { 1 })
+    callback => fn ($e) { 1 })
 p "Docker::pull platform+callback $pull_cb events"
 
 # ── Docker::tag ──
@@ -119,26 +115,26 @@ p "Docker::inspect state=$ins->{State}{Status}"
 val $since = time()
 sleep 1
 val $ev = Docker::events(since => $since, filters => { container => [$r->{id}] },
-    callback => sub ($e) { p "  event: $e->{Action} $e->{Actor}{Attributes}{name}" })
+    callback => fn ($e) { p "  event: $e->{Action} $e->{Actor}{Attributes}{name}" })
 p "Docker::events since+filter $ev event(s)"
 sleep 1
 val $ev2 = Docker::events(since => $since, until => time() + 1,
     filters => { type => ["container"] },
-    callback => sub ($e) { 1 })
+    callback => fn ($e) { 1 })
 p "Docker::events type=container $ev2 event(s)"
 
 sleep 1
 
 # ── Docker::exec ──
 val ($exec) = Docker::exec($name, ["sh", "-c", "uname -a"],
-    callback => sub ($s, $d) {
+    callback => fn ($s, $d) {
         $d =~ s/\s+$//
         p "  exec[$s]: $d" if $d ne ""
     })
 p "Docker::exec exit=$exec->{exit_code}"
 val ($exec2) = Docker::exec($name, ["echo", "hello"],
     user => "0", workdir => "/",
-    callback => sub ($s, $d) { 1 })
+    callback => fn ($s, $d) { 1 })
 p "Docker::exec user+workdir chunks=$exec2->{chunks}"
 
 # ── Docker::logs ──
@@ -153,13 +149,13 @@ Docker::create("busybox:latest", name => $lf_name, cmd => ["echo", "logfollow-ok
 Docker::start($lf_name)
 sleep 1
 val $lf = Docker::logs_follow($lf_name, tail => "5",
-    callback => sub ($s, $d) {
+    callback => fn ($s, $d) {
         $d =~ s/\s+$//
         p "  logs_follow[$s]: $d" if $d ne ""
     })
 p "Docker::logs_follow $lf chunk(s)"
 val $lf2 = Docker::logs_follow($lf_name, tail => "3", timestamps => 1,
-    callback => sub ($s, $d) { 1 })
+    callback => fn ($s, $d) { 1 })
 p "Docker::logs_follow timestamps $lf2 chunk(s)"
 Docker::rm($lf_name, force => 1)
 
@@ -195,7 +191,7 @@ p "Docker::volume_rm $vol"
 # ── Docker::push ──
 if ($ENV{STRYKE_DEMO_DOCKER_PUSH}) {
     val $pn = Docker::push($ENV{STRYKE_DEMO_DOCKER_PUSH},
-        callback => sub ($e) { 1 })
+        callback => fn ($e) { 1 })
     p "Docker::push $pn events"
 } else {
     p "Docker::push skipped (set STRYKE_DEMO_DOCKER_PUSH=img to exercise)"
@@ -205,7 +201,7 @@ if ($ENV{STRYKE_DEMO_DOCKER_PUSH}) {
 if ($ENV{STRYKE_DEMO_DOCKER_BUILD}) {
     val $bn = Docker::build($ENV{STRYKE_DEMO_DOCKER_BUILD},
         tag => "stryke-build-test:latest", pull => 1, rm => 1,
-        callback => sub ($e) { 1 })
+        callback => fn ($e) { 1 })
     p "Docker::build pull+rm $bn events"
 } else {
     p "Docker::build skipped (set STRYKE_DEMO_DOCKER_BUILD=/path/to/dir)"

@@ -7,11 +7,7 @@ use MySQL
 
 p "── stryke-mysql demo (full API) ──"
 
-# ── MySQL::helper_path ──
-p "MySQL::helper_path " . MySQL::helper_path()
 
-# ── MySQL::ensure_built ──
-p "MySQL::ensure_built " . MySQL::ensure_built()
 
 # ── MySQL::version ──
 p "MySQL::version " . MySQL::version()
@@ -95,12 +91,12 @@ p "MySQL::query_col bind+limit=" . join(",", @top)
 
 # ── MySQL::query_stream ──
 val $stream_n = MySQL::query_stream("SELECT name FROM demo_people ORDER BY name",
-    callback => sub ($r) { p "  stream: $r->{name}" })
+    callback => fn ($r) { p "  stream: $r->{name}" })
 p "MySQL::query_stream $stream_n rows"
 val $stream_n2 = MySQL::query_stream(
     "SELECT name, score FROM demo_people WHERE score >= ?",
     bind => [90], limit => 5,
-    callback => sub ($r) { 1 },
+    callback => fn ($r) { 1 },
 )
 p "MySQL::query_stream bind+limit $stream_n2 rows"
 
@@ -154,7 +150,7 @@ p "MySQL::databases #{len(MySQL::databases())} visible"
 
 # ── MySQL::query_stream (limit only) ──
 val $sn3 = MySQL::query_stream("SELECT name, score FROM demo_people ORDER BY score DESC",
-    limit => 2, callback => sub ($r) { p "  top: $r->{name}=$r->{score}" })
+    limit => 2, callback => fn ($r) { p "  top: $r->{name}=$r->{score}" })
 p "MySQL::query_stream limit=2 $sn3 rows"
 
 # ── MySQL::insert_many (second batch) ──

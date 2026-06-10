@@ -16,7 +16,7 @@ use AWS::STS
 use GCP
 use Grpc
 
-sub run_demo ($label, $reachable, $path) {
+fn run_demo ($label, $reachable, $path) {
     unless ($reachable) {
         p "── $label: SKIP (service not reachable)"
         return

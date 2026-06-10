@@ -9,11 +9,7 @@ use Parquet
 
 p "── stryke-parquet demo (full API) ──"
 
-# ── Parquet::helper_path ──
-p "Parquet::helper_path " . Parquet::helper_path()
 
-# ── Parquet::ensure_built ──
-p "Parquet::ensure_built " . Parquet::ensure_built()
 
 # ── Parquet::version ──
 p "Parquet::version " . Parquet::version()
@@ -70,10 +66,10 @@ val @subset = Parquet::to_json $path, columns => ["id", "score"]
 p "Parquet::to_json columns=id,score #{len(@subset)} row(s)"
 
 # ── Parquet::stream ──
-val $sn = Parquet::stream($path, callback => sub ($r) { 1 })
+val $sn = Parquet::stream($path, callback => fn ($r) { 1 })
 p "Parquet::stream all $sn row(s)"
 val $sn2 = Parquet::stream($path, columns => ["name"],
-    callback => sub ($r) { 1 })
+    callback => fn ($r) { 1 })
 p "Parquet::stream columns=name $sn2 row(s)"
 
 # ── Parquet::to_csv ──
@@ -112,9 +108,9 @@ val @names_json = Parquet::to_json $path, columns => ["name"]
 p "Parquet::to_json columns=name #{len(@names_json)} row(s)"
 
 # ── Parquet::stream (score filter via callback) ──
-var $hi = 0
+varsync $hi = 0
 Parquet::stream($path, columns => ["score"],
-    callback => sub ($r) { $hi++ if $r->{score} > 90 })
+    callback => fn ($r) { $hi++ if $r->{score} > 90 })
 p "Parquet::stream score>90 count=$hi"
 
 # ── Parquet::inspect (post-compress compare) ──
@@ -151,7 +147,7 @@ p "Parquet::tail n=1 name=$tail1[0]->{name}"
 
 # ── Parquet::stream (id column) ──
 val $id_n = Parquet::stream($path, columns => ["id"],
-    callback => sub ($r) { 1 })
+    callback => fn ($r) { 1 })
 p "Parquet::stream columns=id $id_n rows"
 
 for val $f (glob("$tmp/*")) {
