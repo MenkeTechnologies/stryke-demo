@@ -10,20 +10,20 @@ edition = "2026"
 # All fourteen stryke-* packages pulled from GitHub. Pinned to the main
 # branch for now — flip to `tag = "vX.Y.Z"` once releases start cutting.
 [deps]
-stryke-arrow    = { git = "https://github.com/MenkeTechnologies/stryke-arrow",    branch = "main" }
-stryke-mysql    = { git = "https://github.com/MenkeTechnologies/stryke-mysql",    branch = "main" }
-stryke-postgres = { git = "https://github.com/MenkeTechnologies/stryke-postgres", branch = "main" }
-stryke-spark    = { git = "https://github.com/MenkeTechnologies/stryke-spark",    branch = "main" }
-stryke-aws      = { git = "https://github.com/MenkeTechnologies/stryke-aws",      branch = "main" }
-stryke-gcp      = { git = "https://github.com/MenkeTechnologies/stryke-gcp",      branch = "main" }
-stryke-kafka    = { git = "https://github.com/MenkeTechnologies/stryke-kafka",    branch = "main" }
-stryke-grpc     = { git = "https://github.com/MenkeTechnologies/stryke-grpc",     branch = "main" }
-stryke-parquet  = { git = "https://github.com/MenkeTechnologies/stryke-parquet",  branch = "main" }
-stryke-duckdb   = { git = "https://github.com/MenkeTechnologies/stryke-duckdb",   branch = "main" }
-stryke-redis    = { git = "https://github.com/MenkeTechnologies/stryke-redis",    branch = "main" }
-stryke-mongo    = { git = "https://github.com/MenkeTechnologies/stryke-mongo",    branch = "main" }
-stryke-k8s      = { git = "https://github.com/MenkeTechnologies/stryke-k8s",      branch = "main" }
-stryke-docker   = { git = "https://github.com/MenkeTechnologies/stryke-docker",   branch = "main" }
+arrow    = { git = "https://github.com/MenkeTechnologies/stryke-arrow",    branch = "main" }
+mysql    = { git = "https://github.com/MenkeTechnologies/stryke-mysql",    branch = "main" }
+postgres = { git = "https://github.com/MenkeTechnologies/stryke-postgres", branch = "main" }
+spark    = { git = "https://github.com/MenkeTechnologies/stryke-spark",    branch = "main" }
+aws      = { git = "https://github.com/MenkeTechnologies/stryke-aws",      branch = "main" }
+gcp      = { git = "https://github.com/MenkeTechnologies/stryke-gcp",      branch = "main" }
+kafka    = { git = "https://github.com/MenkeTechnologies/stryke-kafka",    branch = "main" }
+grpc     = { git = "https://github.com/MenkeTechnologies/stryke-grpc",     branch = "main" }
+parquet  = { git = "https://github.com/MenkeTechnologies/stryke-parquet",  branch = "main" }
+duckdb   = { git = "https://github.com/MenkeTechnologies/stryke-duckdb",   branch = "main" }
+redis    = { git = "https://github.com/MenkeTechnologies/stryke-redis",    branch = "main" }
+mongo    = { git = "https://github.com/MenkeTechnologies/stryke-mongo",    branch = "main" }
+k8s      = { git = "https://github.com/MenkeTechnologies/stryke-k8s",      branch = "main" }
+docker   = { git = "https://github.com/MenkeTechnologies/stryke-docker",   branch = "main" }
 
 [scripts]
 install      = "s install"
