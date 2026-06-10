@@ -1,0 +1,81 @@
+## t/integration_polars_groupby_vs_duckdb.stk — Polars and DuckDB must
+## agree on group-by SUM over the same data.
+##
+## This is the highest-stakes cross-package invariant we can pin: both
+## packages claim to do correct group-by aggregation, but they take
+## completely different code paths (Polars: in-memory columnar engine
+## via the polars cdylib; DuckDB: SQL execution against an in-memory
+## table). If they disagree on the SAME input, one of them has a bug
+## that would silently produce wrong analytics output.
+##
+## Self-contained: synthetic 150-row dataset, no external file, no
+## service. Runs in <100ms.
+
+use Polars
+use Polars::DataFrame
+use DuckDB
+
+# Build mock sales data so we get non-trivial groups.
+val @regions  = ("east", "west", "north", "south")
+val @products = ("a", "b", "c")
+
+var %cols = (
+    region  => [],
+    product => [],
+    qty     => [],
+    revenue => [],
+)
+for (var $i = 0; $i < 150; $i++) {
+    push @{ $cols{region}  }, $regions[$i % 4]
+    push @{ $cols{product} }, $products[$i % 3]
+    push @{ $cols{qty}     }, ($i % 11) + 1
+    push @{ $cols{revenue} }, (($i * 7 + 13) % 100) * 1.5
+}
+
+# ── Polars: group_by region, sum revenue ─────────────────────────────
+val $sum_polars = Polars::DataFrame::groupby_sum(\%cols, ["region"])
+val @polars_rows = @{ $sum_polars->{region} }
+assert_eq scalar(@polars_rows), 4,
+    "Polars groupby_sum produced 4 regions"
+
+# Build a region -> revenue_sum map from polars output.
+var %polars_by_region
+for (var $i = 0; $i < scalar(@polars_rows); $i++) {
+    $polars_by_region{ $sum_polars->{region}[$i] } = $sum_polars->{revenue}[$i]
+}
+
+# ── DuckDB: seed in-memory table, query same group-by ────────────────
+DuckDB::query("CREATE TABLE sales (region VARCHAR, product VARCHAR, qty INT, revenue DOUBLE)")
+
+val $n = scalar(@{ $cols{region} })
+for (var $i = 0; $i < $n; $i++) {
+    val $r = $cols{region}[$i]
+    val $p = $cols{product}[$i]
+    val $q = $cols{qty}[$i]
+    val $v = $cols{revenue}[$i]
+    DuckDB::query("INSERT INTO sales VALUES ('$r', '$p', $q, $v)")
+}
+
+var @duckdb_rows = DuckDB::query(
+    "SELECT region, SUM(revenue) AS rev_sum FROM sales " .
+    "GROUP BY region ORDER BY region")
+assert_eq scalar(@duckdb_rows), 4,
+    "DuckDB GROUP BY region produced 4 regions"
+
+# ── Pin the agreement: both engines must match on each region ────────
+for val $row (@duckdb_rows) {
+    val $region = $row->{region}
+    val $duckdb_sum = $row->{rev_sum}
+    val $polars_sum = $polars_by_region{$region}
+    assert_ok defined $polars_sum,
+        "Polars saw region `$region` (DuckDB did too)"
+    # Allow tiny float drift — the two engines round differently.
+    val $diff = $duckdb_sum > $polars_sum
+        ? $duckdb_sum - $polars_sum
+        : $polars_sum - $duckdb_sum
+    assert_ok $diff < 0.001,
+        "Polars and DuckDB agree on SUM(revenue) for `$region` " .
+        "(polars=$polars_sum, duckdb=$duckdb_sum, diff=$diff)"
+}
+
+test_run

@@ -1,0 +1,64 @@
+## t/integration_polars_csv_round_trip.stk — Polars + Arrow round-trip.
+##
+## Polars' DataFrame is column-oriented; Arrow's CSV writer is row-
+## oriented. They have to negotiate column shape going one way and row
+## shape coming back. This test catches drift where Polars
+## DataFrame::to_json (used as the export hook) disagrees with what
+## Arrow::CSV::write expects on rowification — a silent regression here
+## would corrupt CSVs round-tripped through Polars filters.
+##
+## Self-contained: 30 rows × 4 cols, in-memory + tempfile.
+
+use Polars
+use Polars::DataFrame
+use Arrow
+use Arrow::CSV
+
+# Build a small Polars dataframe.
+val %cols = (
+    id    => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    name  => ["alice", "bob", "charlie", "dana", "eve",
+              "frank", "grace", "heidi", "ivan",  "judy"],
+    score => [1.5, 2.0, 3.25, 4.0, 5.5, 6.0, 7.25, 8.0, 9.5, 10.0],
+    grade => ["A",   "B", "B",      "C", "A",
+              "C",   "B", "A",      "C", "A"],
+)
+
+# Confirm Polars sees the shape we built.
+val ($nrows, $ncols) = @{ Polars::DataFrame::shape(\%cols) }
+assert_eq $nrows, 10, "Polars shape rows = 10"
+assert_eq $ncols, 4,  "Polars shape cols = 4"
+
+# Polars filter via select.
+val $projected = Polars::DataFrame::select(\%cols, ["name", "score"])
+val @pcols = @{ Polars::DataFrame::columns($projected) }
+assert_eq scalar(@pcols), 2, "select cuts to 2 columns"
+
+# Now: write the original to CSV via Arrow.
+# Polars to_json yields {"colname": [vals]} columnar form; Arrow::CSV::write
+# takes an array of row-hashes. Transpose by hand.
+var @rows
+for (var $i = 0; $i < $nrows; $i++) {
+    push @rows, {
+        id    => $cols{id}[$i],
+        name  => $cols{name}[$i],
+        score => $cols{score}[$i],
+        grade => $cols{grade}[$i],
+    }
+}
+
+val $tmp = "/tmp/stryke-demo-integ-polars-arrow-$$.csv"
+Arrow::CSV::write($tmp, \@rows)
+assert_ok -e $tmp, "Arrow::CSV::write produced $tmp"
+
+# Read back via Arrow::CSV — must round-trip lossless on count + content.
+var @back = Arrow::CSV::read($tmp)
+assert_eq scalar(@back), 10,
+    "Arrow::CSV::read recovered all 10 rows from Polars-shaped data"
+assert_eq $back[0]{name}, "alice", "row 0 name preserved"
+assert_eq $back[9]{name}, "judy",  "row 9 name preserved"
+
+# Cleanup.
+unlink $tmp
+
+test_run
