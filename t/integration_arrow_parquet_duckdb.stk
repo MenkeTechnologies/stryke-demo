@@ -1,0 +1,64 @@
+## t/integration_arrow_parquet_duckdb.stk — full 3-package pipeline.
+##
+## Arrow writes parquet → Parquet introspects metadata → DuckDB queries it.
+## The "real" stryke-stack flow when prototyping a data pipeline. A
+## regression in any link of this chain (Arrow parquet codec, Parquet
+## reader, DuckDB parquet_scan) would silently break downstream stryke
+## scripts; this catches it at test time.
+
+use Arrow
+use Parquet
+use DuckDB
+
+val $tmp = "/tmp/stryke-demo-integ-3way-$$.parquet"
+
+# 200 rows × 3 columns. Zstd compression — the codec stryke-arrow defaults to,
+# and the codec DuckDB's parquet reader uses the most. Use a real compression
+# step rather than uncompressed so the test exercises a more realistic path.
+var @rows
+for (var $i = 0; $i < 200; $i++) {
+    push @rows, {
+        id     => $i,
+        bucket => "b" . ($i % 5),
+        value  => ($i * 7 + 3) % 100,
+    }
+}
+
+Arrow::write($tmp, \@rows, format => "parquet", compression => "zstd")
+
+# Parquet inspector confirms what Arrow wrote.
+val $rc = Parquet::count($tmp)
+assert_eq $rc, 200, "Parquet sees 200 rows from Arrow's parquet output"
+
+val $sch = Parquet::schema($tmp)
+assert_eq scalar(@{ $sch->{fields} }), 3,
+    "Parquet sees 3 fields (id, bucket, value)"
+
+# DuckDB queries the parquet directly. SUM-by-bucket must match Arrow's
+# input shape exactly.
+var @agg = DuckDB::query(
+    "SELECT bucket, COUNT(*) AS n, SUM(value) AS total " .
+    "FROM parquet_scan('$tmp') GROUP BY bucket ORDER BY bucket")
+
+assert_eq scalar(@agg), 5, "5 buckets (b0 .. b4)"
+
+# 200 rows / 5 buckets = 40 rows per bucket exactly.
+for val $r (@agg) {
+    assert_eq $r->{n}, 40,
+        "bucket $r->{bucket}: 40 rows (200/5 from our input)"
+}
+
+# Aggregate check across all buckets.
+val $sum_all = DuckDB::query_one(
+    "SELECT SUM(value) AS s FROM parquet_scan('$tmp')")
+var $expected = 0
+for (var $i = 0; $i < 200; $i++) {
+    $expected += ($i * 7 + 3) % 100
+}
+assert_eq $sum_all->{s}, $expected,
+    "DuckDB SUM(value) matches the input sum exactly (Arrow → Parquet → DuckDB lossless)"
+
+# Cleanup.
+unlink $tmp
+
+test_run

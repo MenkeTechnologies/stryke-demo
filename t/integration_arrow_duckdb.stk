@@ -1,0 +1,58 @@
+## t/integration_arrow_duckdb.stk — cross-package compose test.
+##
+## Proves Arrow can write CSV, and DuckDB can immediately read it back via
+## `read_csv_auto`. This is the most common ETL pattern in the stack —
+## a regression that broke either format negotiation would silently
+## break the most common downstream use case.
+##
+## Self-contained: writes 50 rows via Arrow, reads + aggregates via
+## DuckDB. No external file, no service.
+
+use Arrow
+use DuckDB
+
+val $tmp = "/tmp/stryke-demo-integ-arrow-duckdb-$$.csv"
+
+val @teams = ("east", "west", "north")
+var @rows
+for (var $i = 0; $i < 50; $i++) {
+    push @rows, {
+        id    => $i,
+        team  => $teams[$i % 3],
+        score => $i * 1.5,
+    }
+}
+
+Arrow::write($tmp, \@rows, format => "csv")
+assert_ok -e $tmp, "Arrow::write csv produced $tmp"
+
+# DuckDB reads the CSV directly + groups by team.
+var @agg = DuckDB::query(
+    "SELECT team, COUNT(*) AS n, SUM(score) AS total " .
+    "FROM read_csv_auto('$tmp') GROUP BY team ORDER BY team")
+
+assert_eq scalar(@agg), 3, "DuckDB groups into 3 teams (east, west, north)"
+
+# Find each team's group + verify the row counts match what Arrow wrote.
+var %by_team
+for val $r (@agg) {
+    $by_team{$r->{team}} = $r
+}
+
+# Each team should have either 16 or 17 rows (50/3 ≈ 16.67).
+assert_ok $by_team{east}->{n} >= 16 && $by_team{east}->{n} <= 17,
+    "east got $by_team{east}->{n} rows (expected 16 or 17)"
+assert_ok $by_team{west}->{n} >= 16 && $by_team{west}->{n} <= 17,
+    "west got $by_team{west}->{n} rows"
+assert_ok $by_team{north}->{n} >= 16 && $by_team{north}->{n} <= 17,
+    "north got $by_team{north}->{n} rows"
+
+# Total rows must equal 50.
+val $grand_n = $by_team{east}->{n} + $by_team{west}->{n} + $by_team{north}->{n}
+assert_eq $grand_n, 50,
+    "row counts sum to the input row count (Arrow → CSV → DuckDB agree)"
+
+# Cleanup.
+unlink $tmp
+
+test_run

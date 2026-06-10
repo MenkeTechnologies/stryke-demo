@@ -1,0 +1,55 @@
+## t/integration_arrow_parquet.stk — cross-package compose test.
+##
+## Proves Arrow::write + Parquet::inspect/schema/count agree on the same
+## file. Catches regressions where two packages drift on metadata
+## interpretation (e.g. Arrow reports 100 rows, Parquet reports 99).
+##
+## Self-contained: writes a synthetic 100-row parquet via Arrow, then
+## reads it back via the (read-only) Parquet package. No external file,
+## no service. Pure CPU.
+
+use Arrow
+use Parquet
+
+val $tmp = "/tmp/stryke-demo-integ-arrow-parquet-$$.parquet"
+
+# Build 100 rows of mixed types so schema introspection has something
+# substantive to compare against.
+var @rows
+for (var $i = 0; $i < 100; $i++) {
+    push @rows, {
+        id     => $i,
+        name   => "row-$i",
+        score  => $i * 1.5,
+        active => ($i % 7 == 0 ? undef : ($i % 2 == 0 ? 1 : 0)),
+    }
+}
+
+Arrow::write($tmp, \@rows)
+assert_ok -e $tmp, "Arrow::write produced $tmp"
+
+# Row counts must agree between the writer and the inspector.
+val $arrow_rows   = Arrow::row_count($tmp)
+val $parquet_rows = Parquet::count($tmp)
+assert_eq $arrow_rows, scalar(@rows),
+    "Arrow::row_count matches the input row count"
+assert_eq $parquet_rows, scalar(@rows),
+    "Parquet::count matches the input row count"
+assert_eq $arrow_rows, $parquet_rows,
+    "Arrow and Parquet agree on row count for the same file"
+
+# Schema field counts must agree.
+val $arrow_sch   = Arrow::schema($tmp)
+val $parquet_sch = Parquet::schema($tmp)
+val $a_nfields = scalar(@{ $arrow_sch->{fields} })
+val $p_nfields = scalar(@{ $parquet_sch->{fields} })
+assert_eq $a_nfields, 4, "Arrow schema sees 4 fields (id, name, score, active)"
+assert_eq $p_nfields, 4, "Parquet schema sees 4 fields"
+assert_eq $a_nfields, $p_nfields,
+    "Arrow and Parquet agree on field count for the same file"
+
+# Cleanup.
+unlink $tmp
+assert_ok !-e $tmp, "cleanup unlinked $tmp"
+
+test_run
