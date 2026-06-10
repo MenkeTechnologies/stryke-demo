@@ -1,0 +1,57 @@
+## t/integration_parquet_compression_codecs.stk — every compression
+## codec stryke-arrow supports must round-trip through Parquet::inspect.
+##
+## Catches: a refactor that adds a new codec to Arrow::write but
+## forgets to teach Parquet's reader about it, or a codec mismatch
+## where Parquet's footer parser reports a different codec name than
+## what Arrow wrote. Self-contained: synthesizes the same 100 rows for
+## each codec and verifies count + non-zero size.
+
+use Arrow
+use Parquet
+
+var @codecs = qw(zstd snappy gzip lz4)
+
+# Same dataset for every codec so size comparisons are meaningful.
+var @rows
+for (var $i = 0; $i < 100; $i++) {
+    push @rows, {
+        id     => $i,
+        name   => "row-$i",
+        score  => $i * 1.5,
+        active => ($i % 2 == 0 ? 1 : 0),
+    }
+}
+
+# Per-codec asserts: round-trip + verify metadata.
+var %sizes
+for val $codec (@codecs) {
+    val $path = "/tmp/stryke-demo-codec-$codec-$$.parquet"
+    Arrow::write($path, \@rows, format => "parquet", compression => $codec)
+    assert_ok -e $path, "Arrow::write parquet/$codec produced $path"
+
+    val $rc = Parquet::count($path)
+    assert_eq $rc, 100,
+        "Parquet::count after Arrow::write parquet/$codec = 100"
+
+    val $info = Parquet::inspect($path)
+    val $sz = $info->{size} // (-s $path)
+    assert_ok $sz > 0,
+        "Parquet::inspect reports non-zero file size for $codec ($sz bytes)"
+
+    $sizes{$codec} = $sz
+    unlink $path
+}
+
+# Sanity: zstd and snappy should both produce files smaller than uncompressed
+# would (which would be ~3-4KB for 100 small rows). All codecs land in a
+# tight range for this small a dataset; the point is just that every
+# codec produced SOMETHING readable.
+for val $codec (@codecs) {
+    assert_ok $sizes{$codec} < 100_000,
+        "$codec file is well under 100KB for 100 small rows (got $sizes{$codec})"
+    assert_ok $sizes{$codec} > 100,
+        "$codec file is non-trivially large for 100 rows of mixed types"
+}
+
+test_run

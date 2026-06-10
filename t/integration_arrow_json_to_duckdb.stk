@@ -1,0 +1,68 @@
+## t/integration_arrow_json_to_duckdb.stk — Arrow writes NDJSON, DuckDB
+## reads via read_json_auto. Proves the wire format negotiation between
+## the two packages for the JSON path (parallel to the CSV integration
+## test that proves the same for read_csv_auto).
+##
+## Catches: a refactor that changes Arrow::JSON::write's line-delimited
+## format vs DuckDB's expected NDJSON contract. Both packages agree on
+## "one JSON object per line"; pin that contract here so a regression
+## that adds pretty-print or wraps in `[...]` gets caught.
+
+use Arrow
+use Arrow::JSON
+use DuckDB
+
+val $tmp = "/tmp/stryke-demo-arrow-json-duckdb-$$.ndjson"
+
+# Mock event log — common shape for JSON-line ingestion.
+var @events
+for (var $i = 0; $i < 50; $i++) {
+    push @events, {
+        ts      => 1700000000 + $i,
+        level   => $i % 5 == 0 ? "error" : ($i % 3 == 0 ? "warn" : "info"),
+        message => "event-$i",
+        host    => "node-" . ($i % 4),
+    }
+}
+
+Arrow::JSON::write($tmp, \@events)
+assert_ok -e $tmp, "Arrow::JSON::write produced $tmp"
+
+# DuckDB groups by level via read_json_auto.
+var @by_level = DuckDB::query(
+    "SELECT level, COUNT(*) AS n " .
+    "FROM read_json_auto('$tmp') GROUP BY level ORDER BY level")
+
+# 5 distinct levels: error (every 5th), warn (every 3rd not also 5th), info (rest)
+var %by_level_map
+for val $r (@by_level) {
+    $by_level_map{$r->{level}} = $r->{n}
+}
+
+# Verify the level distribution agrees with what we wrote.
+# every 5th = error (i=0,5,10,15,20,25,30,35,40,45 → 10 errors)
+assert_ok defined $by_level_map{error},
+    "DuckDB saw `error` level events via read_json_auto"
+assert_eq $by_level_map{error}, 10,
+    "10 events at level=error (every 5th of 50)"
+
+# every 3rd not 5th-multiple = warn: indices 3,6,9,12,18,21,24,27,33,36,39,42,48
+# (skipping 15,30,45 which are also 5-multiples)
+assert_ok defined $by_level_map{warn},
+    "DuckDB saw `warn` level events"
+
+# The rest = info. Total must round-trip.
+var $total = 0
+for val $r (@by_level) { $total += $r->{n} }
+assert_eq $total, 50,
+    "all 50 events round-tripped Arrow JSON → DuckDB read_json_auto"
+
+# Host distribution: 4 hosts (node-0..node-3), each appearing ~12-13 times.
+val $hosts_q = DuckDB::query_one(
+    "SELECT COUNT(DISTINCT host) AS n FROM read_json_auto('$tmp')")
+assert_eq $hosts_q->{n}, 4,
+    "DuckDB sees 4 distinct hosts (matches the 4 hosts we cycled through)"
+
+unlink $tmp
+
+test_run
