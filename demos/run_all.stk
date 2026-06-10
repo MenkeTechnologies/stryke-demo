@@ -42,7 +42,7 @@ run_demo "13 k8s",      K8s::ping(),       "demos/13_k8s.stk"
 run_demo "14 docker",   Docker::ping(),    "demos/14_docker.stk"
 
 # Cloud / reflection — ping is its own kind of check.
-val $aws_ok = eval { AWS::STS::caller_identity(); 1 } ? 1 : 0
+val $aws_ok = eval { AWS::sts_caller_identity(); 1 } ? 1 : 0
 run_demo "05 aws",      $aws_ok, "demos/05_aws.stk"
 
 # gcp + grpc need explicit args — leave to the user.

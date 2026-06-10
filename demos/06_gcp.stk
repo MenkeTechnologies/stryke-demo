@@ -8,9 +8,26 @@
 use GCP
 
 
-val $bucket = $ARGV[0]
+val $bucket_arg = $ARGV[0]
 val $fn    = $ARGV[1]
 val $topic  = $ARGV[2]
+
+# Parse gs://bucket/key into ($bucket, $key). Strips leading "gs://" if present.
+fn parse_gs_uri ($uri) {
+    var $rest = $uri
+    $rest =~ s{^gs://}{}
+    val @parts = split("/", $rest)
+    val $b = shift @parts
+    ($b, join("/", @parts))
+}
+
+# Strip leading "gs://" from a bucket spec to get the bare bucket name.
+fn bucket_name ($spec) {
+    var $s = $spec
+    $s =~ s{^gs://}{}
+    $s =~ s{/.*$}{}
+    $s
+}
 
 p "── stryke-gcp demo (full API) ──"
 
@@ -33,19 +50,19 @@ if ($auth->{project_id}) {
         (GCP::ping(project => $auth->{project_id}) ? "ok" : "down")
 }
 
-unless (defined $bucket) {
+unless (defined $bucket_arg) {
     p "skip Storage/PubSub: pass gs://bucket as arg 1"
     p ""
-    p "── GCP::Storage (skipped — no bucket arg) ──"
-    p "── GCP::PubSub::publish (skipped — no topic arg) ──"
-    p "── GCP::PubSub::pull (skipped — no subscription arg) ──"
-    p "── GCP::PubSub::ack (skipped — no subscription arg) ──"
-    p "── GCP::PubSub::pump (skipped — no subscription arg) ──"
+    p "── GCP::gcs_* (skipped — no bucket arg) ──"
+    p "── GCP::pubsub_publish (skipped — no topic arg) ──"
+    p "── GCP::pubsub_pull (skipped — no subscription arg) ──"
+    p "── GCP::pubsub_ack (skipped — no subscription arg) ──"
     exit 0
 }
 
-val $uri  = "$bucket/stryke-demo-$$.txt"
-val $uri2 = "$bucket/stryke-demo-file-$$.txt"
+val $bucket = bucket_name($bucket_arg)
+val $uri  = "gs://$bucket/stryke-demo-$$.txt"
+val $uri2 = "gs://$bucket/stryke-demo-file-$$.txt"
 val $body = "hello stryke at " . time()
 val $local_in  = "/tmp/stryke-demo-gcp-in-$$.txt"
 val $local_out = "/tmp/stryke-demo-gcp-out-$$.txt"
@@ -53,110 +70,102 @@ open val $lfh, ">", $local_in or die $!
 print $lfh "from local file gcp\n"
 close $lfh
 
-# ── GCP::Storage::put ──
-GCP::Storage::put $uri, data => $body, content_type => "text/plain"
-p "GCP::Storage::put data ok"
-GCP::Storage::put $uri2, input => $local_in,
-    content_type => "text/plain", cache_control => "no-cache"
-p "GCP::Storage::put input file ok"
+# ── GCP::gcs_put_object (body) ──
+val ($b1, $k1) = parse_gs_uri($uri)
+GCP::gcs_put_object($b1, $k1, $body, content_type => "text/plain")
+p "GCP::gcs_put_object data ok"
 
-# ── GCP::Storage::get ──
-val $back = GCP::Storage::get($uri)
-p "GCP::Storage::get data match=" . ($back eq $body ? "yes" : "no")
-val $outpath = GCP::Storage::get($uri2, output => $local_out)
-p "GCP::Storage::get output file=$outpath"
+# ── GCP::gcs_put_object (input file) ──
+val ($b2, $k2) = parse_gs_uri($uri2)
+GCP::gcs_put_object($b2, $k2, undef,
+    input => $local_in,
+    content_type => "text/plain", cache_control => "no-cache")
+p "GCP::gcs_put_object input file ok"
 
-# ── GCP::Storage::head ──
-val ($meta) = GCP::Storage::head($uri)
-p "GCP::Storage::head size=$meta->{size} type=$meta->{content_type}"
+# ── GCP::gcs_get_object ──
+val $back = GCP::gcs_get_object($b1, $k1)
+p "GCP::gcs_get_object data match=" . ($back eq $body ? "yes" : "no")
+val $outpath = GCP::gcs_get_object($b2, $k2, output => $local_out)
+p "GCP::gcs_get_object output file=$outpath"
 
-# ── GCP::Storage::ls ──
-val @items = GCP::Storage::ls $bucket, limit => 5, delimiter => "/"
-p "GCP::Storage::ls limit=5 delimiter=/ #{len(@items)} entries"
-val @items2 = GCP::Storage::ls $bucket, limit => 10
-p "GCP::Storage::ls limit=10 #{len(@items2)} entries"
-val @items3 = GCP::Storage::ls $bucket, limit => 3, page_size => 10
-p "GCP::Storage::ls page_size=10 limit=3 #{len(@items3)} entries"
+# ── head: no API in lib; derive via gcs_list_objects with exact-key prefix ──
+val @head_match = GCP::gcs_list_objects($b1, prefix => $k1, limit => 1)
+if (@head_match) {
+    val $meta = $head_match[0]
+    p "head (via list) size=" . ($meta->{size} // "?") .
+      " type=" . ($meta->{content_type} // "?")
+} else {
+    p "head: skipped (no metadata in list response)"
+}
 
-# ── GCP::Storage::buckets ──
-val @buckets = GCP::Storage::buckets()
-p "GCP::Storage::buckets #{len(@buckets)} visible"
+# ── GCP::gcs_list_objects ──
+val @items = GCP::gcs_list_objects($bucket, limit => 5, delimiter => "/")
+p "GCP::gcs_list_objects limit=5 delimiter=/ #{len(@items)} entries"
+val @items2 = GCP::gcs_list_objects($bucket, limit => 10)
+p "GCP::gcs_list_objects limit=10 #{len(@items2)} entries"
+val @items3 = GCP::gcs_list_objects($bucket, limit => 3, page_size => 10)
+p "GCP::gcs_list_objects page_size=10 limit=3 #{len(@items3)} entries"
 
-# ── GCP::Storage::rm ──
-GCP::Storage::rm $uri
-GCP::Storage::rm $uri2
-p "GCP::Storage::rm ok"
+# ── GCP::gcs_list_buckets ──
+val @buckets = GCP::gcs_list_buckets()
+p "GCP::gcs_list_buckets #{len(@buckets)} visible"
+
+# ── GCP::gcs_delete_object ──
+GCP::gcs_delete_object($b1, $k1)
+GCP::gcs_delete_object($b2, $k2)
+p "GCP::gcs_delete_object ok"
 unlink $local_in if -e $local_in
 unlink $local_out if -e $local_out
 
-# ── GCP::PubSub::topics ──
-val @topics = GCP::PubSub::topics()
-p "GCP::PubSub::topics #{len(@topics)}"
+# ── topics listing: no API in lib ──
+p "topics: skipped (no API)"
 
-# ── GCP::PubSub::subs ──
-val @subs = GCP::PubSub::subs()
-p "GCP::PubSub::subs #{len(@subs)}"
+# ── subs listing: no API in lib ──
+p "subs: skipped (no API)"
 
-# ── GCP::PubSub::publish ──
+# ── GCP::pubsub_publish ──
 if (defined $topic) {
-    val ($pub) = GCP::PubSub::publish($topic, "hello from stryke-demo",
+    val ($pub) = GCP::pubsub_publish($topic, "hello from stryke-demo",
         attrs => { src => "demo", run => "$$" })
-    p "GCP::PubSub::publish id=$pub->{message_id}"
-    val ($pub2) = GCP::PubSub::publish($topic, "second message",
+    p "GCP::pubsub_publish id=$pub->{message_id}"
+    val ($pub2) = GCP::pubsub_publish($topic, "second message",
         attrs => { src => "demo" }, ordering_key => "demo-key")
-    p "GCP::PubSub::publish ordering_key id=$pub2->{message_id}"
-    val ($pub3) = GCP::PubSub::publish($topic, "third message", attrs => { run => "$$" })
-    p "GCP::PubSub::publish attrs only id=$pub3->{message_id}"
+    p "GCP::pubsub_publish ordering_key id=$pub2->{message_id}"
+    val ($pub3) = GCP::pubsub_publish($topic, "third message", attrs => { run => "$$" })
+    p "GCP::pubsub_publish attrs only id=$pub3->{message_id}"
 } else {
-    p "GCP::PubSub::publish skipped (pass topic as arg 3)"
+    p "GCP::pubsub_publish skipped (pass topic as arg 3)"
 }
 
 unless (defined $fn) {
-    p "GCP::PubSub::pull/ack/pump skipped (pass subscription as arg 2)"
+    p "GCP::pubsub_pull/ack skipped (pass subscription as arg 2)"
+    p "pump: skipped (no API)"
     exit 0
 }
 
-# ── GCP::PubSub::pull ──
-val @pulled = GCP::PubSub::pull($fn, max => 5)
-p "GCP::PubSub::pull max=5 #{len(@pulled)} msg(s)"
+# ── GCP::pubsub_pull ──
+val @pulled = GCP::pubsub_pull($fn, max => 5)
+p "GCP::pubsub_pull max=5 #{len(@pulled)} msg(s)"
 if (@pulled) {
     val @ids = map { $_->{ack_id} } @pulled
-    GCP::PubSub::ack($fn, \@ids)
-    p "GCP::PubSub::ack #{len(@ids)} id(s)"
+    GCP::pubsub_ack($fn, \@ids)
+    p "GCP::pubsub_ack #{len(@ids)} id(s)"
 }
-val @pulled2 = GCP::PubSub::pull($fn, max => 3, deadline => 10)
-p "GCP::PubSub::pull deadline=10 #{len(@pulled2)} msg(s)"
+val @pulled2 = GCP::pubsub_pull($fn, max => 3, deadline => 10)
+p "GCP::pubsub_pull deadline=10 #{len(@pulled2)} msg(s)"
 if (@pulled2) {
-    GCP::PubSub::ack($fn, [map { $_->{ack_id} } @pulled2])
+    GCP::pubsub_ack($fn, [map { $_->{ack_id} } @pulled2])
 }
 
-# ── GCP::PubSub::pump ──
-val $pn = GCP::PubSub::pump($fn, iterations => 2, max => 5,
-    callback => fn ($m) { p "  pump: $m->{message_id}" })
-p "GCP::PubSub::pump handled $pn"
-val $pn2 = GCP::PubSub::pump($fn, iterations => 1, max => 2, deadline => 5,
-    callback => fn ($m) { 1 })
-p "GCP::PubSub::pump deadline=5 handled $pn2"
+# ── pump: no API in lib ──
+p "pump: skipped (no API)"
 
-# ── GCP::PubSub::pull (ack auto variant) ──
+# ── GCP::pubsub_pull (ack auto variant) ──
 if (defined $fn) {
-    val @auto = GCP::PubSub::pull($fn, max => 1, ack => 1)
-    p "GCP::PubSub::pull ack=1 max=1 #{len(@auto)} msg(s)"
+    val @auto = GCP::pubsub_pull($fn, max => 1, ack => 1)
+    p "GCP::pubsub_pull ack=1 max=1 #{len(@auto)} msg(s)"
 }
 
-# ── GCP::PubSub::subs (detail) ──
-for val $i (0 .. (len(@subs) > 2 ? 2 : len(@subs) - 1)) {
-    val $s = $subs[$i]
-    val $name = ref($s) eq "HASH" ? ($s->{name} // "?") : $s
-    p "  sub: $name"
-}
-
-# ── GCP::PubSub::topics (detail) ──
-for val $i (0 .. (len(@topics) > 2 ? 2 : len(@topics) - 1)) {
-    p "  topic: $topics[$i]"
-}
-
-# ── GCP::Storage::head (second uri before rm — skipped after rm) ──
-p "GCP::Storage demo objects cleaned"
+p "GCP demo objects cleaned"
 
 p "done"

@@ -13,6 +13,13 @@ $ENV{AWS_SECRET_ACCESS_KEY} //= "test"
 
 val $ep = $ENV{AWS_ENDPOINT_URL}
 
+# Parse s3://bucket/key/… into ($bucket, $key).
+fn parse_s3_uri ($uri) {
+    val $rest = $uri =~ s{^s3://}{}r
+    val ($b, @k) = split("/", $rest)
+    ($b, join("/", @k))
+}
+
 p "── stryke-aws demo (full API) ──"
 
 
@@ -23,18 +30,9 @@ p "AWS::version " . AWS::version()
 # ── AWS::ping ──
 p "AWS::ping: " . (AWS::ping() ? "ok" : "down")
 
-# ── AWS::STS::caller_identity ──
-val ($who) = AWS::STS::caller_identity()
-p "AWS::STS::caller_identity account=$who->{account} arn=$who->{Arn}"
-
-# ── AWS::STS::assume_role ──
-if ($ENV{STRYKE_DEMO_AWS_ROLE}) {
-    val ($creds) = AWS::STS::assume_role($ENV{STRYKE_DEMO_AWS_ROLE},
-        session => "stryke-demo", duration => 900)
-    p "AWS::STS::assume_role session=$creds->{access_key_id}"
-} else {
-    p "AWS::STS::assume_role skipped (set STRYKE_DEMO_AWS_ROLE=arn:… to exercise)"
-}
+# ── AWS::sts_caller_identity ──
+val ($who) = AWS::sts_caller_identity()
+p "AWS::sts_caller_identity account=$who->{account} arn=$who->{Arn}"
 
 # ── S3 setup ──
 val $bucket = "stryke-demo-$$"
@@ -48,44 +46,37 @@ print $lfh "from local file\n"
 close $lfh
 val $local_out = "/tmp/stryke-demo-aws-out-$$.txt"
 
-# ── AWS::S3::put ──
-AWS::S3::put("s3://$bucket/$key", data => "hello stryke",
+# ── AWS::s3_put_object ──
+AWS::s3_put_object($bucket, $key, "hello stryke",
     content_type => "text/plain")
-p "AWS::S3::put data ok"
-AWS::S3::put("s3://$bucket/$key2", input => $local_in,
+p "AWS::s3_put_object data ok"
+AWS::s3_put_object($bucket, $key2, undef,
+    input => $local_in,
     content_type => "text/plain", cache_control => "max-age=60")
-p "AWS::S3::put input file ok"
+p "AWS::s3_put_object input file ok"
 
-# ── AWS::S3::get ──
-val $body = AWS::S3::get("s3://$bucket/$key")
-p "AWS::S3::get data len=" . length($body)
-val $outpath = AWS::S3::get("s3://$bucket/$key2", output => $local_out)
-p "AWS::S3::get output file=$outpath size=" . (-s $outpath)
+# ── AWS::s3_get_object ──
+val $body = AWS::s3_get_object($bucket, $key)
+p "AWS::s3_get_object data len=" . length($body)
+val $outpath = AWS::s3_get_object($bucket, $key2, output => $local_out)
+p "AWS::s3_get_object output file=$outpath size=" . (-s $outpath)
 
-# ── AWS::S3::head ──
-val ($head) = AWS::S3::head("s3://$bucket/$key")
-p "AWS::S3::head size=$head->{size}"
+# ── AWS::s3_list_objects ──
+val @objs = AWS::s3_list_objects($bucket, delimiter => "/")
+p "AWS::s3_list_objects delimiter=/ #{len(@objs)} entries"
+val @objs2 = AWS::s3_list_objects($bucket, limit => 1)
+p "AWS::s3_list_objects limit=1 #{len(@objs2)} entries"
+val @objs3 = AWS::s3_list_objects($bucket, prefix => "dir/")
+p "AWS::s3_list_objects prefix=dir/ #{len(@objs3)} entries"
 
-# ── AWS::S3::ls ──
-val @objs = AWS::S3::ls("s3://$bucket/", delimiter => "/")
-p "AWS::S3::ls delimiter=/ #{len(@objs)} entries"
-val @objs2 = AWS::S3::ls("s3://$bucket/", limit => 1)
-p "AWS::S3::ls limit=1 #{len(@objs2)} entries"
+# ── AWS::s3_list_buckets ──
+val @buckets = AWS::s3_list_buckets()
+p "AWS::s3_list_buckets #{len(@buckets)} (incl. $bucket)"
 
-# ── AWS::S3::presign ──
-val ($ps) = AWS::S3::presign("s3://$bucket/$key", expires => 300, method => "GET")
-p "AWS::S3::presign GET url=" . substr($ps->{url}, 0, 50) . "…"
-val ($ps2) = AWS::S3::presign("s3://$bucket/$key", expires => 600, method => "PUT")
-p "AWS::S3::presign PUT method=$ps2->{method}"
-
-# ── AWS::S3::buckets ──
-val @buckets = AWS::S3::buckets()
-p "AWS::S3::buckets #{len(@buckets)} (incl. $bucket)"
-
-# ── AWS::S3::rm ──
-AWS::S3::rm("s3://$bucket/$key")
-AWS::S3::rm("s3://$bucket/$key2")
-p "AWS::S3::rm ok"
+# ── AWS::s3_delete_object ──
+AWS::s3_delete_object($bucket, $key)
+AWS::s3_delete_object($bucket, $key2)
+p "AWS::s3_delete_object ok"
 system("aws --endpoint-url $ep s3 rb s3://$bucket --force >/dev/null 2>&1")
 unlink $local_in if -e $local_in
 unlink $local_out if -e $local_out
@@ -99,57 +90,31 @@ system("aws --endpoint-url $ep dynamodb create-table --table-name $tbl" .
     or die "DynamoDB create-table failed"
 system("aws --endpoint-url $ep dynamodb wait table-exists --table-name $tbl")
 
-# ── AWS::Dynamo::put ──
-AWS::Dynamo::put($tbl, { id => "k1", name => "alice", score => 1.5, tags => ["a","b"] })
-p "AWS::Dynamo::put k1 ok"
+# ── AWS::ddb_put_item ──
+AWS::ddb_put_item($tbl, { id => "k1", name => "alice", score => 1.5, tags => ["a","b"] })
+p "AWS::ddb_put_item k1 ok"
+# Single-item puts replace batch_write (no batch API in stryke-aws@0.2.0).
+AWS::ddb_put_item($tbl, { id => "k2", name => "bob" })
+AWS::ddb_put_item($tbl, { id => "k3", name => "charlie", score => 2.0 })
+p "AWS::ddb_put_item 2 more items ok"
 
-# ── AWS::Dynamo::batch_write ──
-AWS::Dynamo::batch_write($tbl, [
-    { id => "k2", name => "bob" },
-    { id => "k3", name => "charlie", score => 2.0 },
-])
-p "AWS::Dynamo::batch_write 2 items ok"
+# ── AWS::ddb_get_item ──
+val ($got) = AWS::ddb_get_item($tbl, { id => "k1" })
+p "AWS::ddb_get_item name=$got->{name}"
+val ($got2) = AWS::ddb_get_item($tbl, { id => "k1" }, consistent => 1)
+p "AWS::ddb_get_item consistent name=$got2->{name}"
 
-# ── AWS::Dynamo::get ──
-val ($got) = AWS::Dynamo::get($tbl, { id => "k1" })
-p "AWS::Dynamo::get name=$got->{name}"
-val ($got2) = AWS::Dynamo::get($tbl, { id => "k1" }, consistent => 1)
-p "AWS::Dynamo::get consistent name=$got2->{name}"
+# ── AWS::ddb_list_tables ──
+val @tbls = AWS::ddb_list_tables()
+p "AWS::ddb_list_tables includes $tbl: " . (grep { $_ eq $tbl } @tbls ? "yes" : "no")
 
-# ── AWS::Dynamo::query ──
-val @q = AWS::Dynamo::query($tbl, expr => "id = :id", vals => { ":id" => "k1" })
-p "AWS::Dynamo::query #{len(@q)} row(s)"
-val @q2 = AWS::Dynamo::query($tbl, expr => "id = :id", vals => { ":id" => "k2" }, limit => 1)
-p "AWS::Dynamo::query limit=1 #{len(@q2)} row(s)"
-
-# ── AWS::Dynamo::scan ──
-val @scan = AWS::Dynamo::scan($tbl, limit => 10)
-p "AWS::Dynamo::scan limit=10 #{len(@scan)} row(s)"
-val @scan2 = AWS::Dynamo::scan($tbl, filter => "attribute_exists(name)", limit => 2)
-p "AWS::Dynamo::scan filter+limit #{len(@scan2)} row(s)"
-
-# ── AWS::Dynamo::scan_stream ──
-varsync $ss = 0
-AWS::Dynamo::scan_stream($tbl, limit => 5, callback => fn ($r) { $ss++ })
-p "AWS::Dynamo::scan_stream limit=5 $ss row(s)"
-varsync $ss2 = 0
-AWS::Dynamo::scan_stream($tbl, filter => "id <> :x", vals => { ":x" => "none" },
-    callback => fn ($r) { $ss2++ })
-p "AWS::Dynamo::scan_stream filter $ss2 row(s)"
-
-# ── AWS::Dynamo::tables ──
-val @tbls = AWS::Dynamo::tables()
-p "AWS::Dynamo::tables includes $tbl: " . (grep { $_ eq $tbl } @tbls ? "yes" : "no")
-
-# ── AWS::Dynamo::describe ──
-val ($desc) = AWS::Dynamo::describe($tbl)
-p "AWS::Dynamo::describe status=$desc->{status}"
-
-# ── AWS::Dynamo::delete ──
-AWS::Dynamo::delete($tbl, { id => "k1" })
-AWS::Dynamo::delete($tbl, { id => "k2" })
-AWS::Dynamo::delete($tbl, { id => "k3" })
-p "AWS::Dynamo::delete cleaned keys"
+# Per-key cleanup via ddb_get_item drives a delete pass through the aws CLI
+# (ddb_delete_item isn't part of stryke-aws@0.2.0).
+for val $id ("k1", "k2", "k3") {
+    system("aws --endpoint-url $ep dynamodb delete-item --table-name $tbl" .
+           " --key '{\"id\":{\"S\":\"$id\"}}' >/dev/null 2>&1")
+}
+p "ddb cleanup ok"
 system("aws --endpoint-url $ep dynamodb delete-table --table-name $tbl >/dev/null 2>&1")
 
 # ── SQS setup ──
@@ -157,69 +122,47 @@ val $qurl = qx{aws --endpoint-url $ep sqs create-queue --queue-name stryke-demo-
 chomp $qurl
 if ($qurl ne "") {
 
-    # ── AWS::SQS::send ──
-    AWS::SQS::send($qurl, "msg-1")
-    AWS::SQS::send($qurl, "msg-2", delay_seconds => 0)
-    p "AWS::SQS::send 2 messages ok"
+    # ── AWS::sqs_send_message ──
+    AWS::sqs_send_message($qurl, "msg-1")
+    AWS::sqs_send_message($qurl, "msg-2", delay_seconds => 0)
+    p "AWS::sqs_send_message 2 messages ok"
 
-    # ── AWS::SQS::receive ──
-    val @recv = AWS::SQS::receive($qurl, max => 2, wait => 5)
-    p "AWS::SQS::receive max=2 wait=5 #{len(@recv)} msg(s)"
+    # ── AWS::sqs_receive_message ──
+    val @recv = AWS::sqs_receive_message($qurl, max => 2, wait => 5)
+    p "AWS::sqs_receive_message max=2 wait=5 #{len(@recv)} msg(s)"
     for val $m (@recv) {
-        AWS::SQS::delete($qurl, $m->{receipt_handle})
+        AWS::sqs_delete_message($qurl, $m->{receipt_handle})
     }
-    AWS::SQS::send($qurl, "recv-test")
-    val @recv2 = AWS::SQS::receive($qurl, max => 1, visibility => 30)
-    p "AWS::SQS::receive visibility=30 #{len(@recv2)} msg(s)"
+    AWS::sqs_send_message($qurl, "recv-test")
+    val @recv2 = AWS::sqs_receive_message($qurl, max => 1, visibility => 30)
+    p "AWS::sqs_receive_message visibility=30 #{len(@recv2)} msg(s)"
     for val $m (@recv2) {
-        AWS::SQS::delete($qurl, $m->{receipt_handle})
+        AWS::sqs_delete_message($qurl, $m->{receipt_handle})
     }
 
-    # ── AWS::SQS::attrs ──
-    val ($attrs) = AWS::SQS::attrs($qurl)
-    p "AWS::SQS::attrs approx=" . ($attrs->{approximate_number_of_messages} // "?")
-
-    # ── AWS::SQS::list ──
-    val @queues = AWS::SQS::list()
-    p "AWS::SQS::list #{len(@queues)} queue(s)"
-    val @queues2 = AWS::SQS::list(prefix => "stryke-demo")
-    p "AWS::SQS::list prefix=stryke-demo #{len(@queues2)} queue(s)"
-
-    # ── AWS::SQS::pump ──
-    AWS::SQS::send($qurl, "pump-me")
-    val $pn = AWS::SQS::pump($qurl, iterations => 1, max => 1, wait => 3,
-        callback => fn ($m) { p "  pump: $m->{body}" })
-    p "AWS::SQS::pump handled $pn"
-
-    # ── AWS::SQS::purge ──
-    AWS::SQS::purge($qurl)
-    p "AWS::SQS::purge ok"
+    # ── AWS::sqs_list_queues ──
+    val @queues = AWS::sqs_list_queues()
+    p "AWS::sqs_list_queues #{len(@queues)} queue(s)"
+    val @queues2 = AWS::sqs_list_queues(prefix => "stryke-demo")
+    p "AWS::sqs_list_queues prefix=stryke-demo #{len(@queues2)} queue(s)"
 
     system("aws --endpoint-url $ep sqs delete-queue --queue-url '$qurl' >/dev/null 2>&1")
 }
 
-# ── AWS::Lambda::list ──
-val @fns = AWS::Lambda::list()
-p "AWS::Lambda::list #{len(@fns)} function(s)"
+# ── AWS::lambda_list_functions ──
+val @fns = AWS::lambda_list_functions()
+p "AWS::lambda_list_functions #{len(@fns)} function(s)"
 
-# ── AWS::Lambda::invoke ──
+# ── AWS::lambda_invoke ──
 if ($ENV{STRYKE_DEMO_LAMBDA}) {
-    val ($out) = AWS::Lambda::invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
+    val ($out) = AWS::lambda_invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
         log_tail => 1)
-    p "AWS::Lambda::invoke status=$out->{status_code}"
-    val ($out2) = AWS::Lambda::invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
+    p "AWS::lambda_invoke status=$out->{status_code}"
+    val ($out2) = AWS::lambda_invoke($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 },
         invocation_type => "RequestResponse", qualifier => "\$LATEST")
-    p "AWS::Lambda::invoke qualifier status=$out2->{status_code}"
+    p "AWS::lambda_invoke qualifier status=$out2->{status_code}"
 } else {
-    p "AWS::Lambda::invoke skipped (set STRYKE_DEMO_LAMBDA=name to exercise)"
-}
-
-# ── AWS::Lambda::call ──
-if ($ENV{STRYKE_DEMO_LAMBDA}) {
-    val $payload = AWS::Lambda::call($ENV{STRYKE_DEMO_LAMBDA}, { ping => 1 })
-    p "AWS::Lambda::call " . to_json($payload)
-} else {
-    p "AWS::Lambda::call skipped (set STRYKE_DEMO_LAMBDA=name to exercise)"
+    p "AWS::lambda_invoke skipped (set STRYKE_DEMO_LAMBDA=name to exercise)"
 }
 
 p "done"
