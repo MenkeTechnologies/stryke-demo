@@ -63,8 +63,8 @@ cd stryke-demo
 s install         # pulls all 14 packages from GitHub, builds helpers
 ```
 
-`s install` resolves every git dep, builds each package's Rust helper
-binary into the global stryke store, and locks the graph in
+`s install` resolves every git dep, builds each package's Rust cdylib
+into the global stryke store, and locks the graph in
 `stryke.lock`. No per-demo install needed.
 
 ## [0x02] Spin up all live services
@@ -139,6 +139,7 @@ stryke-demo/
     13_k8s.stk               # discovery + apply + scale + get + cleanup
     14_docker.stk            # pull + run + inspect + exec + logs + cleanup
     run_all.stk              # ping each service, run only the reachable demos
+  t/                         # cross-package integration tests (arrow / parquet / duckdb / polars)
 ```
 
 ## [0x06] Updating dep pins
