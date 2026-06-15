@@ -1,0 +1,65 @@
+## t/integration_parquet_size_report.stk — Arrow writer ↔ Parquet size_report.
+##
+## Arrow writes a parquet file; stryke-parquet's footer aggregation
+## (`size_report`, added in v0.5.0) rolls the per-column-chunk byte sizes up to
+## file and per-column totals. This cross-checks that aggregation against the
+## independent `column_chunk_stats` (per-row-group) detail: the file-level
+## compressed total must equal the sum of every chunk's compressed_size, and
+## each column's rollup must equal the sum of that column's chunks. A regression
+## in either footer reader would desync the two.
+##
+## Self-contained: Arrow → parquet on disk → two footer readers → cross-check.
+## No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-size-report-$$"
+mkdir $dir unless -d $dir
+val $pq = "$dir/sales.parquet"
+
+var @rows = (
+    { id => 1, region => "east",  amount => 100 },
+    { id => 2, region => "east",  amount => 200 },
+    { id => 3, region => "west",  amount => 300 },
+    { id => 4, region => "west",  amount => 400 },
+    { id => 5, region => "north", amount => 500 },
+    { id => 6, region => "north", amount => 600 },
+)
+Arrow::write($pq, \@rows, compression => "zstd")
+assert_ok -e $pq, "Arrow::write produced the parquet file"
+
+# size_report: file-level aggregation from the footer.
+val $sr = Parquet::size_report($pq)
+assert_eq $sr->{num_rows}, 6,                "size_report: counts all 6 rows"
+assert_gt $sr->{total_compressed_size}, 0,   "size_report: real compressed total"
+assert_eq scalar(@{ $sr->{columns} }), 3,    "size_report: one rollup per column (id, region, amount)"
+
+# column_chunk_stats: per-row-group, per-column chunk detail (the second reader).
+var @groups = Parquet::column_chunk_stats($pq)
+assert_ge scalar(@groups), 1, "column_chunk_stats: at least one row group"
+
+# Cross-check 1: file compressed total == sum of every chunk's compressed_size.
+var $chunk_total = 0
+var %per_col
+for my $g (@groups) {
+    for my $c (@{ $g->{columns} }) {
+        $chunk_total += $c->{compressed_size}
+        $per_col{ $c->{column} } = ($per_col{ $c->{column} } // 0) + $c->{compressed_size}
+    }
+}
+assert_eq $sr->{total_compressed_size}, $chunk_total, "size_report total == sum of per-chunk compressed sizes"
+
+# Cross-check 2: each size_report column rollup == that column's chunk sum.
+for my $col (@{ $sr->{columns} }) {
+    assert_eq $col->{compressed_size}, $per_col{ $col->{column} }, "size_report rollup matches chunk sum for `$col->{column}`"
+}
+
+# Cross-check 3: bytes_per_row is the compressed total spread over the rows.
+assert_ok abs($sr->{bytes_per_row} - $sr->{total_compressed_size} / 6) < 1e-9, "size_report bytes_per_row derives from the total"
+
+# cleanup
+unlink $pq if -e $pq
+rmdir $dir if -d $dir
+
+test_run
