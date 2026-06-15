@@ -1,0 +1,65 @@
+## t/integration_arrow_reverse_rgsummary.stk — Arrow reverse ↔ Parquet row-group sizing.
+##
+## Exercises two helpers added in the v0.8.0 round end-to-end:
+##   * Arrow::reverse (flip row order, no sort key), and
+##   * Parquet::row_group_summary (footer-only row-group sizing rollup).
+##
+## Arrow writes a parquet, we read its row-group sizing, reverse the rows, then
+## re-read the sizing: reversing is a pure row-order flip, so the total row count
+## and the row-group sizing rollup must be unchanged across the two independent
+## footer readers, while the actual row order is inverted (cross-checked by
+## reading the data back). A regression in either the take-based reverse or the
+## footer reader would desync the before/after accounting.
+##
+## Self-contained: Arrow → parquet → row_group_summary → reverse →
+## row_group_summary. No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-reverse-rgsummary-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/events.parquet"
+
+# 6 rows in a predictable order.
+var @rows = (
+    { id => 1, note => "open"  },
+    { id => 2, note => "ack"   },
+    { id => 3, note => "ping"  },
+    { id => 4, note => "pong"  },
+    { id => 5, note => "warn"  },
+    { id => 6, note => "close" },
+)
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Row-group sizing on the original file (footer-only).
+val $before = Parquet::row_group_summary($src)
+assert_eq $before->{total_rows}, 6, "row_group_summary: 6 rows before reverse"
+assert_ge $before->{num_row_groups}, 1, "row_group_summary: at least one row group"
+
+# Reverse: pure row-order flip — 1..6 becomes 6..1.
+val $dst = "$dir/reversed.parquet"
+val $rv = Arrow::reverse($src, $dst)
+assert_eq $rv->{rows}, 6, "reverse: row count preserved"
+assert_eq join(",", map { $_->{id} } Arrow::read($dst)), "6,5,4,3,2,1", "reverse: ids flipped"
+
+# Row-group sizing on the reversed file: a row-order flip changes neither the
+# total rows nor the row-group sizing rollup.
+val $after = Parquet::row_group_summary($dst)
+assert_eq $after->{total_rows}, $before->{total_rows}, "row_group_summary: total rows unchanged by reverse"
+assert_eq $after->{num_row_groups}, $before->{num_row_groups}, "row_group_summary: row-group count unchanged by reverse"
+assert_eq $after->{rows_per_group}{max}, $before->{rows_per_group}{max}, "row_group_summary: rows-per-group max unchanged"
+# Cross-check: a second reverse restores the original order.
+val $dst2 = "$dir/restored.parquet"
+Arrow::reverse($dst, $dst2)
+assert_eq join(",", map { $_->{id} } Arrow::read($dst2)), "1,2,3,4,5,6", "reverse: double reverse is identity"
+assert_eq Parquet::row_group_summary($dst2)->{total_rows}, 6, "row_group_summary: restored file still has 6 rows"
+
+# cleanup
+unlink $src if -e $src
+unlink $dst if -e $dst
+unlink $dst2 if -e $dst2
+rmdir $dir if -d $dir
+
+test_run
