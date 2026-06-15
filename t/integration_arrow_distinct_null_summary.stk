@@ -1,0 +1,63 @@
+## t/integration_arrow_distinct_null_summary.stk — Arrow dedupe ↔ Parquet nulls.
+##
+## Exercises two diagnostics added in the v0.6.0 round end-to-end:
+##   * Arrow::distinct (drop duplicate rows, first occurrence kept), and
+##   * Parquet::null_summary (per-column null rollup from the footer).
+##
+## Arrow writes a parquet that has BOTH duplicate rows AND nulls. We read the
+## null rollup, dedupe with Arrow::distinct, then read the rollup again and
+## cross-check that the row + null accounting stays consistent across the two
+## independent readers: a regression in either (the dedupe mask or the footer
+## null reader) would desync the before/after counts.
+##
+## Self-contained: Arrow → parquet → null_summary → distinct → null_summary.
+## No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-distinct-nulls-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/events.parquet"
+
+# 6 rows, 2 of them exact duplicates; `note` is null on some rows.
+var @rows = (
+    { id => 1, note => "open"  },
+    { id => 2, note => undef   },
+    { id => 1, note => "open"  },   # duplicate of row 0
+    { id => 3, note => undef   },
+    { id => 2, note => undef   },   # duplicate of row 1
+    { id => 4, note => "close" },
+)
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Null rollup on the original file (footer-only).
+val $before = Parquet::null_summary($src)
+assert_eq $before->{num_rows}, 6, "null_summary: 6 rows before dedupe"
+val $note_before = (grep { $_->{column} eq "note" } @{ $before->{columns} })[0]
+assert_eq $note_before->{null_count}, 3, "null_summary: 3 null notes before dedupe (rows 2,4,5... 0-based 1,3,4)"
+
+# Dedupe: rows 0 and 1 are each duplicated, so 2 rows drop → 4 unique remain.
+val $dst = "$dir/distinct.parquet"
+val $d = Arrow::distinct($src, $dst)
+assert_eq $d->{rows}, 4,    "distinct: 4 unique rows"
+assert_eq $d->{dropped}, 2, "distinct: 2 duplicate rows dropped"
+# Cross-check 1: kept + dropped == original row count.
+assert_eq $d->{rows} + $d->{dropped}, $before->{num_rows}, "distinct: rows + dropped == original total"
+
+# Null rollup on the deduped file: one of the dropped dups was a null `note`
+# (row 4, the second (2,undef)), so the null count drops from 3 to 2.
+val $after = Parquet::null_summary($dst)
+assert_eq $after->{num_rows}, 4, "null_summary: 4 rows after dedupe"
+# Cross-check 2: the deduped null reader agrees with the distinct row count.
+assert_eq $after->{num_rows}, $d->{rows}, "null_summary rows == distinct rows"
+val $note_after = (grep { $_->{column} eq "note" } @{ $after->{columns} })[0]
+assert_eq $note_after->{null_count}, 2, "null_summary: distinct kept 2 null-note rows (ids 2 and 3)"
+
+# cleanup
+unlink $src if -e $src
+unlink $dst if -e $dst
+rmdir $dir if -d $dir
+
+test_run
