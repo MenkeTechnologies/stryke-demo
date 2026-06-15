@@ -1,0 +1,76 @@
+## t/integration_arrow_drop_nulls_encoding.stk — Arrow null-cleaning ↔ Parquet encoding.
+##
+## Exercises two helpers added in the v0.7.0 round end-to-end:
+##   * Arrow::drop_nulls (drop rows null in target columns), and
+##   * Parquet::encoding_summary (footer-only per-column encoding + codec rollup).
+##
+## Arrow writes a parquet with nulls in one column. We read the null rollup and
+## the encoding rollup, drop the null rows with Arrow::drop_nulls, then re-read
+## both: the cleaned file must have zero nulls in the target column, the row
+## accounting must stay consistent across the independent readers, and the
+## physical-encoding rollup must still report a codec + at least one encoding per
+## column (a regression in the footer reader would surface here).
+##
+## Self-contained: Arrow → parquet → null_summary/encoding_summary → drop_nulls →
+## null_summary/encoding_summary. No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-dropnulls-enc-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/events.parquet"
+
+# 5 rows; `note` is null on 2 of them.
+var @rows = (
+    { id => 1, note => "open"  },
+    { id => 2, note => undef   },
+    { id => 3, note => "ack"   },
+    { id => 4, note => undef   },
+    { id => 5, note => "close" },
+)
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Null rollup on the original file (footer-only): 2 null notes of 5 rows.
+val $nb = Parquet::null_summary($src)
+assert_eq $nb->{num_rows}, 5, "null_summary: 5 rows before cleaning"
+val $note_before = (grep { $_->{column} eq "note" } @{ $nb->{columns} })[0]
+assert_eq $note_before->{null_count}, 2, "null_summary: 2 null notes before cleaning"
+
+# Encoding rollup on the original file: every column reports a codec + encoding.
+val $eb = Parquet::encoding_summary($src)
+assert_eq scalar(@{ $eb->{columns} }), 2, "encoding_summary: one entry per column (id, note)"
+for val $c (@{ $eb->{columns} }) {
+    assert_ok scalar(@{ $c->{encodings} })   >= 1, "encoding_summary: $c->{column} reports an encoding"
+    assert_ok scalar(@{ $c->{compression} }) >= 1, "encoding_summary: $c->{column} reports a codec"
+}
+
+# Clean: drop rows null in `note` → the 2 null rows go, 3 remain.
+val $dst = "$dir/clean.parquet"
+val $d = Arrow::drop_nulls($src, $dst, ["note"])
+assert_eq $d->{rows},    3, "drop_nulls: 3 complete rows survive"
+assert_eq $d->{dropped}, 2, "drop_nulls: 2 null-note rows dropped"
+# Cross-check 1: kept + dropped == original row count.
+assert_eq $d->{rows} + $d->{dropped}, $nb->{num_rows}, "drop_nulls: rows + dropped == original total"
+
+# Null rollup on the cleaned file: the target column is now null-free.
+val $na = Parquet::null_summary($dst)
+assert_eq $na->{num_rows}, 3, "null_summary: 3 rows after cleaning"
+# Cross-check 2: the cleaned null reader agrees with the drop_nulls row count.
+assert_eq $na->{num_rows}, $d->{rows}, "null_summary rows == drop_nulls rows"
+val $note_after = (grep { $_->{column} eq "note" } @{ $na->{columns} })[0]
+assert_eq $note_after->{null_count}, 0, "null_summary: no nulls left in note after drop_nulls"
+
+# Encoding rollup survives the rewrite: still a well-formed per-column report.
+val $ea = Parquet::encoding_summary($dst)
+assert_eq scalar(@{ $ea->{columns} }), 2, "encoding_summary: cleaned file still reports both columns"
+val $note_enc = (grep { $_->{column} eq "note" } @{ $ea->{columns} })[0]
+assert_ok scalar(@{ $note_enc->{compression} }) >= 1, "encoding_summary: cleaned note column still reports a codec"
+
+# cleanup
+unlink $src if -e $src
+unlink $dst if -e $dst
+rmdir $dir if -d $dir
+
+test_run
