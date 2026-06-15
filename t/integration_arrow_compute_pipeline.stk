@@ -1,0 +1,56 @@
+## t/integration_arrow_compute_pipeline.stk — Arrow compute pipeline.
+##
+## Exercises Arrow's compute layer (filter → sort → head, added in
+## stryke-arrow v0.4.0) end to end: every step is file→file via Arrow's
+## kernels, so the data never round-trips through stryke. Reads the result
+## back via Arrow::read and verifies the top-N selection.
+##
+## Self-contained: writes 60 rows, transforms server-side, reads back. No
+## service, no second engine.
+
+use Arrow
+
+val $dir = "/tmp/stryke-demo-arrow-compute-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/src.parquet"
+val $top = "$dir/top.parquet"
+
+# 60 rows; score = id * 1.5 → 0 .. 88.5.
+var @rows
+for (var $i = 0; $i < 60; $i++) {
+    push @rows, { id => $i, score => $i * 1.5 }
+}
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the source parquet"
+
+# Compute pipeline: keep score >= 50, sort descending, take the top 5 — all
+# file→file via Arrow's compute kernels (no data in stryke).
+val $f = "$dir/filtered.parquet"
+val $s = "$dir/sorted.parquet"
+Arrow::filter($src, $f, "score", "ge", 50)
+Arrow::sort($f, $s, [{ column => "score", descending => 1 }])
+Arrow::head($s, $top, 5)
+
+# Read the computed parquet back.
+var @out = Arrow::read($top)
+assert_eq scalar(@out), 5, "top-5 parquet has exactly 5 rows after Arrow compute"
+
+# Highest score is id 59 (59 * 1.5 = 88.5); descending order is preserved.
+assert_eq $out[0]->{id}, 59,   "Arrow::sort desc put the max score first"
+assert_eq $out[0]->{score}, 88.5, "max score value survived the pipeline"
+assert_ok $out[-1]->{score} >= 50, "every surviving row passed the score >= 50 filter"
+var $prev = $out[0]->{score} + 1
+var $descending = 1
+for val $r (@out) {
+    $descending = 0 if $r->{score} > $prev
+    $prev = $r->{score}
+}
+assert_ok $descending, "rows stay in descending score order through read-back"
+
+# cleanup
+for val $p ($src, $f, $s, $top) {
+    unlink $p if -e $p
+}
+rmdir $dir if -d $dir
+
+test_run

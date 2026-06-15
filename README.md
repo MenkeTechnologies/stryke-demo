@@ -139,7 +139,8 @@ stryke-demo/
     13_k8s.stk               # discovery + apply + scale + get + cleanup
     14_docker.stk            # pull + run + inspect + exec + logs + cleanup
     run_all.stk              # ping each service, run only the reachable demos
-  t/                         # cross-package integration tests (arrow / parquet / duckdb / polars)
+  t/                         # cross-package integration tests (arrow compute,
+                             #   parquet footer diagnostics, arrow↔duckdb, polars)
 ```
 
 ## [0x06] Updating dep pins

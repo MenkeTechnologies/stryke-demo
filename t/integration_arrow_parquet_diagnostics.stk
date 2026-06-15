@@ -1,0 +1,49 @@
+## t/integration_arrow_parquet_diagnostics.stk — Arrow writer ↔ Parquet footer.
+##
+## Arrow writes a parquet file; stryke-parquet's footer diagnostics
+## (validate + column_chunk_stats, added in v0.4.0) inspect it without a
+## second engine; Arrow then reads it back. Proves the Arrow writer and the
+## independent parquet footer reader agree on row count and column layout —
+## a regression in either would desync the two readers in the stack.
+##
+## Self-contained: Arrow → parquet on disk → footer inspection → Arrow
+## read-back. No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-arrow-parquet-$$"
+mkdir $dir unless -d $dir
+val $pq = "$dir/sales.parquet"
+
+var @rows = (
+    { id => 1, region => "east",  amount => 100 },
+    { id => 2, region => "east",  amount => 200 },
+    { id => 3, region => "west",  amount => 300 },
+    { id => 4, region => "west",  amount => 400 },
+    { id => 5, region => "north", amount => 500 },
+)
+Arrow::write($pq, \@rows, compression => "zstd")
+assert_ok -e $pq, "Arrow::write produced the parquet file"
+
+# Parquet footer diagnostics agree on the row count, end to end.
+val $v = Parquet::validate($pq)
+assert_ok $v->{ok},      "Parquet::validate: Arrow-written file reads end-to-end"
+assert_eq $v->{rows}, 5, "Parquet::validate row count matches the 5 written rows"
+
+# Per-row-group column chunk detail exposes all three columns from the footer.
+val @groups = Parquet::column_chunk_stats($pq)
+assert_ge scalar(@groups), 1, "column_chunk_stats: at least one row group"
+assert_eq scalar(@{ $groups[0]->{columns} }), 3, "footer reports all 3 columns (id, region, amount)"
+
+# Arrow reads its own parquet back — full round trip.
+var @back = Arrow::read($pq)
+assert_eq scalar(@back), 5, "Arrow::read round-trips all 5 rows"
+assert_eq $back[0]->{id}, 1, "row order preserved"
+assert_eq $back[2]->{region}, "west", "string column survived the round trip"
+
+# cleanup
+unlink $pq if -e $pq
+rmdir $dir if -d $dir
+
+test_run
