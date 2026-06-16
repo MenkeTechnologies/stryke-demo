@@ -1,0 +1,48 @@
+## t/integration_arrow_gather_parquet_duckdb.stk — gather-driven reorder pipeline.
+##
+## Arrow::gather selects rows by an explicit 0-based index list (polars gather /
+## pandas .iloc[[…]]) — the row-reorder/repeat primitive the other slicers
+## (head/tail/slice/filter) can't express. This proves the gathered output is a
+## real parquet file the rest of the stack reads identically: Parquet preserves
+## the gather order in file order, and DuckDB's parquet_scan sums the gathered
+## values losslessly. A regression in Arrow::gather's index handling would change
+## the row set; this catches it through two independent downstream readers.
+
+use Arrow
+use Parquet
+use DuckDB
+
+val $src = "/tmp/stryke-demo-integ-gather-src-$$.parquet"
+val $out = "/tmp/stryke-demo-integ-gather-out-$$.parquet"
+
+# 100 rows: id 0..99, value = id * 10.
+var @rows
+for (var $i = 0; $i < 100; $i++) {
+    push @rows, { id => $i, value => $i * 10 }
+}
+Arrow::write($src, \@rows, format => "parquet")
+
+# An arbitrary index list: out of order, with a repeat — none of which
+# head/tail/slice/filter can produce.
+val @idx = (99, 0, 50, 50, 1)
+val $g   = Arrow::gather($src, $out, \@idx)
+assert_eq $g->{rows}, scalar(@idx), "Arrow::gather emits one row per index"
+
+# Parquet sees the gathered file and preserves the gather order in file order.
+assert_eq Parquet::count($out), 5, "Parquet sees 5 gathered rows"
+var @back = Parquet::head($out, n => 5)
+assert_eq join(",", map { $_->{id} } @back), "99,0,50,50,1",
+    "Parquet file order matches the gather index list (repeat preserved)"
+
+# DuckDB reads the same gathered parquet and sums losslessly.
+# Expected sum = (99 + 0 + 50 + 50 + 1) * 10 = 2000.
+val $agg = DuckDB::query_one("SELECT COUNT(*) AS n, SUM(value) AS total FROM parquet_scan('$out')")
+assert_eq $agg->{n}, 5, "DuckDB counts the 5 gathered rows"
+assert_eq $agg->{total}, 2000,
+    "DuckDB SUM(value) over the gathered rows is lossless (Arrow gather → Parquet → DuckDB agree)"
+
+# Cleanup.
+unlink $src
+unlink $out
+
+test_run
