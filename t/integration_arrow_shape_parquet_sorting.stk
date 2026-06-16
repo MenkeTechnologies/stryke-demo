@@ -1,0 +1,55 @@
+## t/integration_arrow_shape_parquet_sorting.stk — Arrow shape ↔ Parquet sort meta.
+##
+## Exercises two accessors added in the v0.x.0 round end-to-end:
+##   * Arrow::shape (the (rows, columns) accessor), and
+##   * Parquet::sorting_columns_summary (the footer's declared sort order).
+##
+## Arrow writes a parquet file; Arrow::shape reports its (rows, columns); the
+## column count is cross-checked against Parquet::schema (an independent footer
+## reader), and Arrow::count's row total is cross-checked against shape. Then
+## Parquet::sorting_columns_summary confirms the Arrow writer declares no sort
+## order (the default), one entry per row group. A regression in either reader
+## would desync the cross-checks.
+##
+## Self-contained: Arrow → parquet → shape vs schema/count + sorting summary.
+## No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-shape-sort-$$"
+mkdir $dir unless -d $dir
+val $pq = "$dir/sales.parquet"
+
+var @rows = (
+    { id => 1, region => "east",  amount => 100 },
+    { id => 2, region => "east",  amount => 200 },
+    { id => 3, region => "west",  amount => 300 },
+    { id => 4, region => "west",  amount => 400 },
+    { id => 5, region => "north", amount => 500 },
+)
+Arrow::write($pq, \@rows)
+assert_ok -e $pq, "Arrow::write produced the parquet file"
+
+# Arrow::shape — the (rows, columns) accessor (v0.10.0).
+val $shape = Arrow::shape($pq)
+assert_eq $shape->{rows},    5, "shape: 5 rows"
+assert_eq $shape->{columns}, 3, "shape: 3 columns (id, region, amount)"
+
+# Cross-reader checks: column count agrees with the Parquet footer schema, and
+# the row dimension agrees with Arrow::count on the same file.
+assert_eq scalar(@{ Parquet::schema($pq)->{fields} }), $shape->{columns}, "shape columns == parquet footer schema field count"
+assert_eq Arrow::count($pq), $shape->{rows}, "shape rows == Arrow::count"
+
+# Parquet::sorting_columns_summary — the footer's declared sort order (v0.10.0).
+# An Arrow-written file declares no sort order, one row-group entry.
+val $sort = Parquet::sorting_columns_summary($pq)
+assert_eq $sort->{has_sorting_columns}, 0, "sorting_columns_summary: Arrow writer declares no sort order"
+assert_ge scalar(@{ $sort->{row_groups} }), 1, "sorting_columns_summary: at least one row group"
+assert_eq scalar(@{ $sort->{row_groups}[0]{sorting_columns} }), 0, "sorting_columns_summary: empty when unset"
+
+# cleanup
+unlink $pq if -e $pq
+rmdir $dir if -d $dir
+
+test_run
