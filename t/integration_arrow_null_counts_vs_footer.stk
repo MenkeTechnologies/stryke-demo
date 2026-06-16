@@ -1,0 +1,60 @@
+## t/integration_arrow_null_counts_vs_footer.stk — two null readers agree.
+##
+## Exercises two diagnostics added in the v0.9.0 round end-to-end:
+##   * Arrow::null_counts (streaming per-column null tally via the Arrow
+##     reader), and
+##   * Parquet::bloom_filter_summary (footer bloom-filter presence).
+##
+## Arrow writes a parquet with nulls in two columns. We tally nulls two
+## independent ways — Arrow's streaming reader (null_counts) and Parquet's
+## footer rollup (null_summary) — and assert they agree per column and on the
+## row total. A regression in either reader would desync the counts. Then
+## bloom_filter_summary confirms the Arrow writer emits no bloom filters.
+##
+## Self-contained: Arrow → parquet → null_counts vs footer null_summary +
+## bloom_filter_summary. No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-nullcounts-$$"
+mkdir $dir unless -d $dir
+val $pq = "$dir/events.parquet"
+
+# 5 rows; `note` is null on 2 rows, `score` null on 1, `id` never null.
+var @rows = (
+    { id => 1, note => "a",   score => 10    },
+    { id => 2, note => undef, score => 20    },
+    { id => 3, note => "c",   score => undef },
+    { id => 4, note => undef, score => 40    },
+    { id => 5, note => "e",   score => 50    },
+)
+Arrow::write($pq, \@rows)
+assert_ok -e $pq, "Arrow::write produced the parquet file"
+
+# Arrow's streaming per-column null tally (v0.9.0).
+val $nc = Arrow::null_counts($pq)
+assert_eq $nc->{rows},               5, "null_counts: 5 rows"
+assert_eq $nc->{null_counts}{id},    0, "null_counts: id has no nulls"
+assert_eq $nc->{null_counts}{note},  2, "null_counts: note has 2 nulls"
+assert_eq $nc->{null_counts}{score}, 1, "null_counts: score has 1 null"
+
+# Cross-reader invariant: Arrow's streaming count must agree with Parquet's
+# footer rollup on the same file, column for column.
+val $ns = Parquet::null_summary($pq)
+assert_eq $ns->{num_rows}, $nc->{rows}, "row totals agree across the two readers"
+val $note_footer = (grep { $_->{column} eq "note" } @{ $ns->{columns} })[0]
+assert_eq $note_footer->{null_count}, $nc->{null_counts}{note}, "Arrow null_counts agrees with Parquet footer for note"
+val $score_footer = (grep { $_->{column} eq "score" } @{ $ns->{columns} })[0]
+assert_eq $score_footer->{null_count}, $nc->{null_counts}{score}, "Arrow null_counts agrees with Parquet footer for score"
+
+# bloom_filter_summary (v0.9.0): an Arrow-written file carries no bloom filters.
+val $bf = Parquet::bloom_filter_summary($pq)
+assert_eq $bf->{columns_total}, 3, "bloom_filter_summary: 3 columns"
+assert_eq $bf->{columns_with_bloom_filter}, 0, "bloom_filter_summary: Arrow writer emits no bloom filters"
+
+# cleanup
+unlink $pq if -e $pq
+rmdir $dir if -d $dir
+
+test_run
