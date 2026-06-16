@@ -1,0 +1,68 @@
+## t/integration_arrow_keep_nulls_summary.stk — Arrow keep_nulls ↔ Parquet null_summary.
+##
+## Exercises Arrow::keep_nulls (the complement of drop_nulls — keep only rows
+## that are null in a target column) end-to-end against the Parquet footer's
+## null_summary, and proves the two null-cleaning halves partition the file:
+##   keep_nulls(rows) + drop_nulls(rows) == every row, no overlap.
+##
+## Arrow writes a parquet with nulls in one column. We isolate the incomplete
+## rows with keep_nulls, then cross-check: the kept count equals the footer's
+## null_count for that column, the kept file is 100% null in the target column,
+## and keep_nulls + drop_nulls reconstruct the original row total exactly.
+##
+## Self-contained: Arrow → parquet → null_summary → keep_nulls/drop_nulls →
+## null_summary. No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-keepnulls-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/events.parquet"
+
+# 6 rows; `note` is null on 3 of them.
+var @rows = (
+    { id => 1, note => "open"  },
+    { id => 2, note => undef   },
+    { id => 3, note => "ack"   },
+    { id => 4, note => undef   },
+    { id => 5, note => "close" },
+    { id => 6, note => undef   },
+)
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Footer null rollup: 3 null notes of 6 rows.
+val $nb = Parquet::null_summary($src)
+assert_eq $nb->{num_rows}, 6, "null_summary: 6 rows in the source"
+val $note_before = (grep { $_->{column} eq "note" } @{ $nb->{columns} })[0]
+assert_eq $note_before->{null_count}, 3, "null_summary: 3 null notes in the source"
+
+# keep_nulls: isolate the incomplete rows (note is null) → exactly 3 rows.
+val $only = "$dir/incomplete.parquet"
+val $k = Arrow::keep_nulls($src, $only, ["note"])
+assert_eq $k->{rows},    3, "keep_nulls: 3 incomplete rows kept"
+assert_eq $k->{dropped}, 3, "keep_nulls: 3 fully-populated rows removed"
+# Cross-check 1: kept count == the footer's null_count for the column.
+assert_eq $k->{rows}, $note_before->{null_count}, "keep_nulls rows == null_summary null_count"
+
+# The isolated file is 100% null in the target column.
+val $na = Parquet::null_summary($only)
+assert_eq $na->{num_rows}, 3, "null_summary: 3 rows in the isolated file"
+val $note_after = (grep { $_->{column} eq "note" } @{ $na->{columns} })[0]
+assert_eq $note_after->{null_count}, 3, "null_summary: every kept row is null in note"
+
+# drop_nulls is the complementary half: it keeps the 3 complete rows.
+val $clean = "$dir/clean.parquet"
+val $d = Arrow::drop_nulls($src, $clean, ["note"])
+assert_eq $d->{rows}, 3, "drop_nulls: 3 complete rows survive"
+# Cross-check 2: keep_nulls and drop_nulls partition the file with no overlap.
+assert_eq $k->{rows} + $d->{rows}, $nb->{num_rows}, "keep_nulls + drop_nulls == every row (no overlap)"
+
+# cleanup
+unlink $src   if -e $src
+unlink $only  if -e $only
+unlink $clean if -e $clean
+rmdir $dir if -d $dir
+
+test_run
