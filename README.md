@@ -141,7 +141,8 @@ stryke-demo/
     run_all.stk              # ping each service, run only the reachable demos
   t/                         # cross-package integration tests (arrow compute,
                              #   parquet footer diagnostics, arrow dedupe ↔ null
-                             #   rollup, arrow↔duckdb, polars)
+                             #   rollup, arrow cast ↔ duckdb types, arrow↔duckdb,
+                             #   polars)
 ```
 
 ## [0x06] Updating dep pins

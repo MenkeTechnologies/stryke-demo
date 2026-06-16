@@ -1,0 +1,68 @@
+## t/integration_arrow_cast_parquet_duckdb.stk — Arrow column cast ↔ Parquet footer type ↔ DuckDB type system.
+##
+## A column-type change written by Arrow must be seen identically by every engine
+## that reads the file. Arrow writes a parquet whose `id` column is a 64-bit int,
+## then Arrow::cast rewrites it with `id` as a string. We confirm the type change
+## three independent ways:
+##   * the Parquet footer's physical/logical type flips INT64 → BYTE_ARRAY/String,
+##   * DuckDB's type system reports typeof(id) flips BIGINT → VARCHAR, and
+##   * the cell values survive the cast (1 → "1") in both Arrow and DuckDB reads.
+##
+## Proves a cast is not just an in-memory Arrow view but a real on-disk schema
+## change that an external SQL engine honours.
+##
+## Self-contained: Arrow → parquet → schema/typeof → cast → schema/typeof. No
+## service. Uses only released ops (Arrow write/cast/read v0.11.0, Parquet schema
+## v0.11.0, DuckDB read_parquet/query_scalar v0.11.0).
+
+use Arrow
+use Parquet
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-cast-duckdb-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/ints.parquet"
+
+Arrow::write($src, [
+    { id => 1, name => "alice" },
+    { id => 2, name => "bob"   },
+])
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Helper: pull one field's descriptor out of a Parquet footer schema.
+fn field_of ($path, $col) {
+    (grep { $_->{name} eq $col } @{ Parquet::schema($path)->{fields} })[0]
+}
+
+# Before: the footer calls `id` a 64-bit int and DuckDB agrees it is BIGINT.
+val $sf = field_of($src, "id")
+assert_eq $sf->{physical_type}, "INT64", "footer: id starts as INT64"
+val $sq = "FROM read_parquet(" . q{'} . $src . q{'} . ")"
+assert_eq DuckDB::query_scalar("SELECT typeof(id) $sq"), "BIGINT", "duckdb: id starts as BIGINT"
+
+# Cast id → string into a new file.
+val $dst = "$dir/strs.parquet"
+Arrow::cast($src, $dst, { id => "str" })
+assert_ok -e $dst, "Arrow::cast produced the casted file"
+
+# After: the footer flips to BYTE_ARRAY with a String logical type.
+val $df = field_of($dst, "id")
+assert_eq $df->{physical_type}, "BYTE_ARRAY", "footer: id is now BYTE_ARRAY"
+assert_eq $df->{logical_type},  "String",     "footer: id carries a String logical type"
+
+# DuckDB independently sees VARCHAR, and the values survived the cast.
+val $dq = "FROM read_parquet(" . q{'} . $dst . q{'} . ")"
+assert_eq DuckDB::query_scalar("SELECT typeof(id) $dq"),       "VARCHAR", "duckdb: id is now VARCHAR"
+assert_eq DuckDB::query_scalar("SELECT id $dq WHERE name='alice'"), "1",  "duckdb: cast preserved the value 1"
+
+# Arrow reads them back as strings (string '1' compares eq to '1').
+val @back = Arrow::read($dst)
+assert_eq join(",", map { $_->{id} } @back), "1,2", "arrow: casted ids read back as 1,2"
+assert_ok $back[0]->{id} eq "1", "arrow: id is the string '1' after the cast"
+
+# cleanup
+unlink $src if -e $src
+unlink $dst if -e $dst
+rmdir $dir if -d $dir
+
+test_run
