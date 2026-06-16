@@ -1,0 +1,47 @@
+## t/integration_arrow_value_counts_duckdb.stk — cross-engine frequency check.
+##
+## Arrow::value_counts (the columnar frequency primitive) must agree, value for
+## value, with DuckDB's `SELECT col, COUNT(*) GROUP BY col` over the same data.
+## Two independent engines computing the same aggregate is a strong regression
+## guard: if Arrow's tally or DuckDB's group-by drifted, the per-team counts
+## would diverge. Self-contained — Arrow writes 60 rows, both engines aggregate.
+
+use Arrow
+use DuckDB
+
+val $src = "/tmp/stryke-demo-vc-src-$$.csv"
+val $out = "/tmp/stryke-demo-vc-out-$$.csv"
+
+# 60 rows: east×30, west×20, north×10.
+var @rows
+for (var $i = 0; $i < 30; $i++) { push @rows, { team => "east" } }
+for (var $i = 0; $i < 20; $i++) { push @rows, { team => "west" } }
+for (var $i = 0; $i < 10; $i++) { push @rows, { team => "north" } }
+Arrow::write($src, \@rows, format => "csv")
+
+# Arrow::value_counts → a { team, count } table, one row per distinct value.
+val $r = Arrow::value_counts($src, $out, "team", dst_format => "csv")
+assert_eq $r->{distinct}, 3, "value_counts: 3 distinct teams"
+var %arrow
+for val $row (Arrow::read($out, format => "csv")) {
+    $arrow{$row->{team}} = $row->{count} + 0
+}
+assert_eq $arrow{east}, 30, "value_counts: east occurs 30 times"
+
+# DuckDB groups the same CSV independently.
+var %duck
+for val $row (DuckDB::query("SELECT team, COUNT(*) AS n FROM read_csv_auto('$src') GROUP BY team")) {
+    $duck{$row->{team}} = $row->{n} + 0
+}
+
+# The two engines must agree on every value's frequency.
+for val $team ("east", "west", "north") {
+    assert_eq $arrow{$team}, $duck{$team},
+        "Arrow value_counts and DuckDB GROUP BY agree on `$team` (arrow=$arrow{$team}, duck=$duck{$team})"
+}
+
+# Cleanup.
+unlink $src
+unlink $out
+
+test_run
