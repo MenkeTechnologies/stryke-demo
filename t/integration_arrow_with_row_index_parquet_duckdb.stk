@@ -1,0 +1,76 @@
+## t/integration_arrow_with_row_index_parquet_duckdb.stk — Arrow row-index ↔ Parquet ↔ DuckDB.
+##
+## Exercises the helper added to stryke-arrow this round end-to-end:
+##   * Arrow::with_row_index (prepend a 0-based UInt64 row-index column —
+##     polars with_row_index / pandas reset_index).
+##
+## Arrow writes a parquet, then with_row_index prepends an index column. We confirm
+## the new column at the file level (Parquet::schema gains a leading field, the
+## row count is unchanged) and at the value level (Arrow::read sees 0..n-1). Then
+## DuckDB reads the indexed parquet directly and proves the index aligns with the
+## original row order and honours a custom name + offset — so the index a polars
+## user expects survives Arrow → Parquet → a SQL engine losslessly.
+##
+## Self-contained: Arrow → parquet → with_row_index → schema/read → DuckDB scan.
+## No service. The DuckDB part uses the custom name `row_nr` (not the default
+## `index`, which is a SQL reserved word).
+
+use Arrow
+use Parquet
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-rowindex-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/people.parquet"
+
+var @rows = (
+    { id => 30, name => "alice" },
+    { id => 10, name => "bob"   },
+    { id => 40, name => "carol" },
+    { id => 20, name => "dave"  },
+    { id => 50, name => "eve"   },
+)
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Default index: a leading `index` column running 0..n-1, originals preserved.
+val $indexed = "$dir/indexed.parquet"
+val $wi = Arrow::with_row_index($src, $indexed)
+assert_eq $wi->{rows}, 5, "with_row_index: all 5 rows preserved"
+
+# File-level: the schema gained a leading field, so 3 fields now (index, id, name).
+assert_eq Parquet::schema($indexed)->{num_fields}, 3, "with_row_index: schema gained the index column"
+assert_eq Parquet::count($indexed), 5,                "with_row_index: row count unchanged"
+assert_eq Parquet::column_names($indexed)->[0], "index", "with_row_index: index is the first column"
+
+# Value-level: the index runs 0..4 in row order; originals untouched.
+val @back = Arrow::read($indexed)
+assert_eq join(",", map { $_->{index} } @back), "0,1,2,3,4", "with_row_index: 0-based index in row order"
+assert_eq join(",", map { $_->{id} } @back),    "30,10,40,20,50", "with_row_index: original column order preserved"
+
+# Custom name + offset, then let DuckDB read the indexed parquet directly.
+val $indexed2 = "$dir/indexed_named.parquet"
+Arrow::with_row_index($src, $indexed2, name => "row_nr", offset => 100)
+
+var @scanned = DuckDB::query(
+    "SELECT row_nr, name FROM parquet_scan('$indexed2') ORDER BY row_nr")
+assert_eq scalar(@scanned), 5, "DuckDB: scanned all 5 indexed rows"
+assert_eq join(",", map { $_->{row_nr} } @scanned), "100,101,102,103,104",
+    "DuckDB: custom offset index runs 100..104 in order"
+# The index aligns with the original row order (row_nr 100 is the first input row).
+assert_eq $scanned[0]->{name}, "alice", "DuckDB: row_nr 100 is the first input row (alice)"
+assert_eq $scanned[4]->{name}, "eve",   "DuckDB: row_nr 104 is the last input row (eve)"
+
+val $agg = DuckDB::query_one(
+    "SELECT MIN(row_nr) AS lo, MAX(row_nr) AS hi, COUNT(*) AS n FROM parquet_scan('$indexed2')")
+assert_eq $agg->{lo}, 100, "DuckDB: index min honours the offset"
+assert_eq $agg->{hi}, 104, "DuckDB: index max is offset + n - 1"
+assert_eq $agg->{n},  5,   "DuckDB: every row carries an index"
+
+# cleanup
+unlink $src      if -e $src
+unlink $indexed  if -e $indexed
+unlink $indexed2 if -e $indexed2
+rmdir $dir if -d $dir
+
+test_run

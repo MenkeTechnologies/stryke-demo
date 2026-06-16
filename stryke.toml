@@ -1,6 +1,6 @@
 [package]
 name = "stryke-demo"
-version = "0.11.0"
+version = "0.12.0"
 description = "Live demos of every stryke-* package: arrow, mysql, postgres, spark, aws, gcp, kafka, grpc, parquet, duckdb, redis, mongo, k8s, docker."
 authors = ["MenkeTechnologies"]
 license = "MIT"
