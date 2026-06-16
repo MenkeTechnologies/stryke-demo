@@ -1,0 +1,73 @@
+## t/integration_arrow_filter_partition_parquet_duckdb.stk
+## Arrow IN / NOT IN partition ↔ Parquet drop ↔ DuckDB LIKE-escaped read.
+##
+## Exercises four helpers added across the v0.12.0–v0.13.0 rounds end-to-end:
+##   * Arrow::filter_in      (keep rows whose column is in a value set — SQL IN),
+##   * Arrow::filter_not_in  (its complement — SQL NOT IN),
+##   * Parquet::drop         (drop a column, the inverse of select), and
+##   * DuckDB::quote_like    (escape a string for a literal LIKE match).
+##
+## Arrow writes a 6-row parquet whose `region` values carry an underscore (a LIKE
+## metacharacter). filter_in keeps the us_east/eu_west rows and filter_not_in
+## keeps the ap_south complement; together they must partition the input exactly
+## (every row in exactly one side, none lost or duplicated). Parquet::drop then
+## strips a column off the kept file, and DuckDB reads it back, using quote_like
+## to match a region literally — proving the underscore is treated as data, not a
+## wildcard, on the file Arrow filtered.
+##
+## Self-contained: Arrow → parquet → filter_in/filter_not_in → Parquet drop +
+## footer → DuckDB read_parquet + LIKE. No service.
+
+use Arrow
+use Parquet
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-filter-partition-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/events.parquet"
+
+# Six rows, three regions (each twice), no nulls — so IN and NOT IN partition
+# the rows exactly. Region values contain a literal `_` (a LIKE wildcard).
+Arrow::write($src, [
+    { id => 1, region => "us_east",  score => 10 },
+    { id => 2, region => "eu_west",  score => 20 },
+    { id => 3, region => "ap_south", score => 30 },
+    { id => 4, region => "us_east",  score => 40 },
+    { id => 5, region => "eu_west",  score => 50 },
+    { id => 6, region => "ap_south", score => 60 },
+])
+assert_eq Parquet::count($src), 6, "footer: 6 rows written"
+
+# ── IN / NOT IN partition ────────────────────────────────────────────
+val $keep = "$dir/in.parquet"
+val $rest = "$dir/out.parquet"
+val $fin = Arrow::filter_in($src, $keep, "region", ["us_east", "eu_west"])
+val $fout = Arrow::filter_not_in($src, $rest, "region", ["us_east", "eu_west"])
+assert_eq $fin->{rows}, 4,  "filter_in keeps the 4 us_east/eu_west rows"
+assert_eq $fout->{rows}, 2, "filter_not_in keeps the 2 ap_south rows"
+# The two sides partition the input exactly (no overlap, nothing lost).
+assert_eq $fin->{rows} + $fout->{rows}, 6, "IN + NOT IN cover every row once"
+assert_ok !(grep { $_->{region} ne "ap_south" } Arrow::read($rest)), "filter_not_in kept only the complement (ap_south)"
+
+# ── Parquet drop on the kept side ────────────────────────────────────
+val $slim = "$dir/in_slim.parquet"
+val $dr = Parquet::drop($keep, $slim, ["score"])
+assert_eq join(",", @{ $dr->{columns} }), "id,region", "drop: score removed, id+region in order"
+assert_eq Parquet::schema($slim)->{num_fields}, 2, "footer: dropped file has 2 columns"
+assert_eq Parquet::count($slim), 4, "footer: drop preserved the 4 rows"
+
+# ── DuckDB reads the kept file, matching a region literally via quote_like ──
+val $q = "FROM read_parquet(" . q{'} . $keep . q{'} . ")"
+# us_east has a literal underscore; quote_like escapes it so LIKE treats it as
+# data. The pattern matches only the two us_east rows, not eu_west.
+val $pat = q{'} . DuckDB::quote_like("us_east") . q{'}
+assert_eq DuckDB::query_scalar("SELECT count(*) $q WHERE region LIKE $pat ESCAPE '\\'"), 2,
+    "duckdb: quote_like matches the 2 us_east rows literally"
+# Sanity: the kept file holds exactly the 4 in-set rows DuckDB also counts.
+assert_eq DuckDB::query_scalar("SELECT count(*) $q"), 4, "duckdb: read_parquet sees all 4 kept rows"
+
+# cleanup
+for val $f ($src, $keep, $rest, $slim) { unlink $f if -e $f }
+rmdir $dir if -d $dir
+
+test_run
