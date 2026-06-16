@@ -1,0 +1,73 @@
+## t/integration_arrow_fill_null_parquet_select.stk — Arrow null-fill ↔ Parquet projection.
+##
+## Exercises two helpers added in the v0.11.0 round end-to-end:
+##   * Arrow::fill_null (replace nulls with a typed constant), and
+##   * Parquet::select (project a column subset into a new file — column pruning).
+##
+## Arrow writes a parquet with nulls in one column. We confirm the nulls at the
+## footer level (Parquet::null_summary), fill them with Arrow::fill_null, then
+## re-read the footer: the filled file must report zero nulls in the target
+## column while keeping every row. Finally Parquet::select prunes a column off the
+## filled file and we verify the pruned file's schema shrank but the row count and
+## the filled values survived — proving the two transforms compose.
+##
+## Self-contained: Arrow → parquet → null_summary → fill_null → null_summary →
+## select → schema/count. No service.
+
+use Arrow
+use Parquet
+
+val $dir = "/tmp/stryke-demo-fillnull-select-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/scores.parquet"
+
+# 5 rows; `score` is null on 2 of them, plus a `name` column to prune later.
+var @rows = (
+    { id => 1, name => "alice", score => 10   },
+    { id => 2, name => "bob",   score => undef },
+    { id => 3, name => "carol", score => 30   },
+    { id => 4, name => "dave",  score => undef },
+    { id => 5, name => "eve",   score => 50   },
+)
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the parquet file"
+
+# Null rollup on the original file (footer-only): 2 null scores of 5 rows.
+val $nb = Parquet::null_summary($src)
+assert_eq $nb->{num_rows}, 5, "null_summary: 5 rows before filling"
+val $score_before = (grep { $_->{column} eq "score" } @{ $nb->{columns} })[0]
+assert_eq $score_before->{null_count}, 2, "null_summary: 2 null scores before filling"
+
+# Fill: replace the null scores with 0 → every row kept, two cells filled.
+val $filled = "$dir/filled.parquet"
+val $f = Arrow::fill_null($src, $filled, 0, ["score"])
+assert_eq $f->{rows},   5, "fill_null: all 5 rows kept (fill, not drop)"
+assert_eq $f->{filled}, 2, "fill_null: 2 null cells filled"
+
+# Null rollup on the filled file: the target column is now null-free.
+val $na = Parquet::null_summary($filled)
+assert_eq $na->{num_rows}, 5, "null_summary: still 5 rows after filling"
+val $score_after = (grep { $_->{column} eq "score" } @{ $na->{columns} })[0]
+assert_eq $score_after->{null_count}, 0, "null_summary: no nulls left in score after fill_null"
+# Cross-check: the formerly-null rows now read back as 0.
+val @back = Arrow::read($filled)
+assert_eq join(",", map { $_->{score} } @back), "10,0,30,0,50", "fill_null: nulls became 0, others untouched"
+
+# Prune: project just id + score into a new file, dropping name.
+val $proj = "$dir/projected.parquet"
+val $sel = Parquet::select($filled, $proj, ["id", "score"])
+assert_eq $sel->{rows}, 5,                            "select: row count preserved through the projection"
+assert_eq join(",", @{ $sel->{columns} }), "id,score", "select: only id+score kept"
+# The pruned file really has 2 fields, and the filled values are intact.
+assert_eq Parquet::schema($proj)->{num_fields}, 2, "select: pruned file has 2 fields (name dropped)"
+assert_eq Parquet::count($proj),                5, "select: pruned file still has all 5 rows"
+val @pback = Arrow::read($proj)
+assert_eq join(",", map { $_->{score} } @pback), "10,0,30,0,50", "select: filled scores survive the projection"
+
+# cleanup
+unlink $src    if -e $src
+unlink $filled if -e $filled
+unlink $proj   if -e $proj
+rmdir $dir if -d $dir
+
+test_run
