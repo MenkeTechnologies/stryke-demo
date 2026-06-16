@@ -1,0 +1,60 @@
+## t/integration_arrow_hstack_duckdb.stk — Arrow column-stack ↔ DuckDB.
+##
+## Exercises the helper added to stryke-arrow this round end-to-end:
+##   * Arrow::hstack (horizontally stack a second file's columns onto the first —
+##     the column-wise counterpart of concat).
+##
+## Two single-column Arrow files (the ids and the names of the same five rows) are
+## written separately, then hstack glues them back into one file. We confirm the
+## combined column set and row count at the file level (Arrow::read), then let
+## DuckDB read the combined parquet directly and prove the columns line up
+## row-for-row — so a column join done in Arrow survives into a SQL engine intact.
+##
+## Self-contained: Arrow → two parquet files → hstack → read → DuckDB scan. No
+## service.
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-hstack-$$"
+mkdir $dir unless -d $dir
+
+# Same five rows, split across two single-column files.
+val $ids   = "$dir/ids.parquet"
+val $names = "$dir/names.parquet"
+Arrow::write($ids,   [ { id => 10 }, { id => 20 }, { id => 30 }, { id => 40 }, { id => 50 } ])
+Arrow::write($names, [ { name => "alice" }, { name => "bob" }, { name => "carol" }, { name => "dave" }, { name => "eve" } ])
+assert_ok -e $ids,   "Arrow::write produced the ids file"
+assert_ok -e $names, "Arrow::write produced the names file"
+
+# hstack glues the two column sets back into one file.
+val $combined = "$dir/combined.parquet"
+val $hs = Arrow::hstack($ids, $names, $combined)
+assert_eq $hs->{rows}, 5,                              "hstack: row count preserved"
+assert_eq join(",", @{ $hs->{columns} }), "id,name",  "hstack: ids columns then names columns"
+
+# File-level: both columns present, aligned in row order.
+val @back = Arrow::read($combined)
+assert_eq scalar(@back), 5, "hstack: all five rows in the combined file"
+assert_eq $back[0]->{id}, 10,      "hstack: first row id"
+assert_eq $back[0]->{name}, "alice", "hstack: first row name aligned with its id"
+assert_eq $back[4]->{name}, "eve",   "hstack: last row name aligned"
+
+# DuckDB reads the combined parquet directly and confirms the join row-for-row.
+var @rows = DuckDB::query(
+    "SELECT id, name FROM parquet_scan('$combined') ORDER BY id")
+assert_eq scalar(@rows), 5, "DuckDB: scanned all five stacked rows"
+assert_eq join(",", map { $_->{id} } @rows),   "10,20,30,40,50",            "DuckDB: ids intact through the stack"
+assert_eq join(",", map { $_->{name} } @rows), "alice,bob,carol,dave,eve",  "DuckDB: names aligned with their ids"
+val $agg = DuckDB::query_one(
+    "SELECT COUNT(*) AS n, COUNT(DISTINCT name) AS distinct_names FROM parquet_scan('$combined')")
+assert_eq $agg->{n}, 5,              "DuckDB: every id carries a name column"
+assert_eq $agg->{distinct_names}, 5, "DuckDB: the stacked name column is fully populated"
+
+# cleanup
+unlink $ids      if -e $ids
+unlink $names    if -e $names
+unlink $combined if -e $combined
+rmdir $dir if -d $dir
+
+test_run
