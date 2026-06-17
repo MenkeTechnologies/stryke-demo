@@ -1,0 +1,55 @@
+## t/integration_arrow_top_k_parquet_duckdb.stk — top-N selection pipeline.
+##
+## Arrow::top_k keeps the k rows with the largest (or smallest) values in a
+## column (polars top_k) — a named single-pass top-N the other slicers
+## (head/tail/slice/gather) can't express without a separate sort. This proves
+## the top-k output is a real parquet file the rest of the stack reads
+## identically: Parquet preserves the ranked order in file order, and DuckDB's
+## parquet_scan agrees on the same sum/max over the selected rows. A regression
+## in Arrow::top_k's ordering or its nulls-last / k-cap handling would change the
+## row set; this catches it through two independent downstream readers.
+
+use Arrow
+use Parquet
+use DuckDB
+
+val $src = "/tmp/stryke-demo-integ-topk-src-$$.parquet"
+val $out = "/tmp/stryke-demo-integ-topk-out-$$.parquet"
+val $bot = "/tmp/stryke-demo-integ-topk-bot-$$.parquet"
+
+# 100 rows: id 0..99, value = id * 10 (so value runs 0..990).
+var @rows
+for (var $i = 0; $i < 100; $i++) {
+    push @rows, { id => $i, value => $i * 10 }
+}
+Arrow::write($src, \@rows, format => "parquet")
+
+# Top 5 by value, largest first: ids 99,98,97,96,95 (values 990..950).
+val $tk = Arrow::top_k($src, $out, "value", 5)
+assert_eq $tk->{rows}, 5, "Arrow::top_k emits k rows"
+
+# Parquet sees the ranked file and preserves the top-k order in file order.
+assert_eq Parquet::count($out), 5, "Parquet sees 5 top-k rows"
+var @back = Parquet::head($out, n => 5)
+assert_eq join(",", map { $_->{id} } @back), "99,98,97,96,95",
+    "Parquet file order matches the top-k ranking (largest value first)"
+
+# DuckDB reads the same parquet and agrees on the aggregate of the top 5.
+# Expected SUM = (99+98+97+96+95)*10 = 4850; MAX = 990.
+val $agg = DuckDB::query_one("SELECT COUNT(*) AS n, SUM(value) AS total, MAX(value) AS hi FROM parquet_scan('$out')")
+assert_eq $agg->{n}, 5,        "DuckDB counts the 5 top-k rows"
+assert_eq $agg->{total}, 4850, "DuckDB SUM over the top 5 values is lossless (Arrow top_k → Parquet → DuckDB agree)"
+assert_eq $agg->{hi}, 990,     "DuckDB MAX equals the largest value (id 99)"
+
+# bottom_k (descending => 0): the 3 smallest, smallest first — ids 0,1,2.
+Arrow::top_k($src, $bot, "value", 3, descending => 0)
+var @low = Parquet::head($bot, n => 3)
+assert_eq join(",", map { $_->{id} } @low), "0,1,2",
+    "Arrow::top_k descending => 0 selects the smallest rows (bottom_k)"
+
+# Cleanup.
+unlink $src
+unlink $out
+unlink $bot
+
+test_run
