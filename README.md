@@ -142,7 +142,10 @@ stryke-demo/
   t/                         # cross-package integration tests (arrow compute,
                              #   parquet footer diagnostics, arrow dedupe ↔ null
                              #   rollup, arrow cast ↔ duckdb types, arrow IN/NOT IN
-                             #   ↔ parquet drop ↔ duckdb LIKE, arrow↔duckdb, polars)
+                             #   ↔ parquet drop ↔ duckdb LIKE, arrow concat/rename
+                             #   ↔ duckdb, arrow slice/tail/select/drop ↔ duckdb,
+                             #   duckdb aggregate helpers ↔ arrow footer stats,
+                             #   arrow↔duckdb, polars)
 ```
 
 ## [0x06] Updating dep pins

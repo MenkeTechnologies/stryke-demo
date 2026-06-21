@@ -1,0 +1,87 @@
+## t/integration_arrow_slice_tail_select_drop_duckdb.stk — Arrow row/column window ops ↔ DuckDB.
+##
+## Pins the four file→file windowing transforms that the other slicer tests
+## don't cover, each against an independent DuckDB SQL equivalent over the same
+## source parquet:
+##   * Arrow::slice  (an offset+length row window — SQL LIMIT … OFFSET),
+##   * Arrow::tail   (the last n rows — SQL ORDER BY … LIMIT from the end),
+##   * Arrow::select (project a column subset — SQL column list), and
+##   * Arrow::drop   (the complement of select — drop named columns).
+## Plus the cheap accessors Arrow::column_count and Arrow::is_empty.
+##
+## A regression in Arrow's offset math, tail boundary, or projection set would
+## diverge from DuckDB's row/column selection on the identical file; this catches
+## it through two independent engines.
+##
+## Self-contained: Arrow → parquet → slice/tail/select/drop → read +
+## column_count/is_empty → DuckDB parquet_scan. No service. Uses only released
+## ops (Arrow write/slice/tail/select/drop/read/column_names/column_count/
+## is_empty v0.19.0, DuckDB query/query_scalar v0.19.0).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-window-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/src.parquet"
+
+# 20 rows: id 0..19, value = id * 10, plus a name column to project/drop.
+var @rows
+for (var $i = 0; $i < 20; $i++) {
+    push @rows, { id => $i, name => "row-$i", value => $i * 10 }
+}
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the 20-row source"
+assert_eq Arrow::column_count($src), 3, "source has three columns (id, name, value)"
+assert_ok !Arrow::is_empty($src), "source file is not empty"
+
+# DuckDB scans the same source so every Arrow op has a SQL twin to match.
+val $sq = "parquet_scan('$src')"
+
+# ── slice: 5 rows starting at offset 7 → ids 7..11 ───────────────────
+val $sl = "$dir/slice.parquet"
+val $r1 = Arrow::slice($src, $sl, 7, 5)
+assert_eq $r1->{rows}, 5, "slice: emitted exactly length rows"
+val @sl_ids = map { $_->{id} } Arrow::read($sl)
+assert_eq join(",", @sl_ids), "7,8,9,10,11", "slice: offset 7 + length 5 selects ids 7..11"
+# DuckDB LIMIT … OFFSET over the ordered source must pick the same window.
+var @sql_slice = DuckDB::query("SELECT id FROM $sq ORDER BY id LIMIT 5 OFFSET 7")
+assert_eq join(",", map { $_->{id} } @sql_slice), "7,8,9,10,11",
+    "DuckDB LIMIT 5 OFFSET 7 matches Arrow::slice's window"
+
+# ── tail: last 4 rows → ids 16,17,18,19 ──────────────────────────────
+val $tl = "$dir/tail.parquet"
+val $r2 = Arrow::tail($src, $tl, 4)
+assert_eq $r2->{rows}, 4, "tail: emitted the last 4 rows"
+val @tl_ids = map { $_->{id} } Arrow::read($tl)
+assert_eq join(",", @tl_ids), "16,17,18,19", "tail: kept the final four ids in order"
+val $maxid = DuckDB::query_scalar("SELECT MAX(id) FROM $sq")
+assert_eq $maxid, 19, "DuckDB confirms the largest id is the last tail row"
+
+# ── select: project (id, value), drop name ───────────────────────────
+val $sel = "$dir/select.parquet"
+val $r3 = Arrow::select($src, $sel, ["id", "value"])
+assert_eq $r3->{rows}, 20, "select: keeps every row (projection only cuts columns)"
+assert_eq join(",", @{ Arrow::column_names($sel) }), "id,value", "select: projected to (id, value)"
+assert_eq Arrow::column_count($sel), 2, "select: column_count dropped to 2"
+
+# ── drop: the complement — drop name, keep (id, value) ───────────────
+val $drp = "$dir/drop.parquet"
+val $r4 = Arrow::drop($src, $drp, ["name"])
+assert_eq join(",", @{ Arrow::column_names($drp) }), "id,value",
+    "drop: dropping `name` leaves the same columns select kept"
+# select and drop must agree column-for-column on this file.
+assert_eq join(",", @{ Arrow::column_names($sel) }), join(",", @{ Arrow::column_names($drp) }),
+    "select(['id','value']) and drop(['name']) produce identical schemas"
+
+# DuckDB confirms the projected file still carries the same value column.
+val $sum_proj = DuckDB::query_scalar("SELECT SUM(value) FROM parquet_scan('$sel')")
+assert_eq $sum_proj, 1900, "DuckDB: projected file value sum = (0+1+…+19)*10 = 1900"
+
+# cleanup
+for val $p ($src, $sl, $tl, $sel, $drp) {
+    unlink $p if -e $p
+}
+rmdir $dir if -d $dir
+
+test_run

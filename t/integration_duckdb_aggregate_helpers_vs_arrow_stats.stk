@@ -1,0 +1,87 @@
+## t/integration_duckdb_aggregate_helpers_vs_arrow_stats.stk — DuckDB aggregate
+## helper layer ↔ Arrow footer stats.
+##
+## DuckDB ships convenience aggregate helpers (sum_/avg_/min_/max_/count/
+## group_count/query_col/table_exists) that wrap SQL so callers don't hand-write
+## it. Arrow writes per-column min/max into the parquet footer, surfaced by
+## Arrow::stats. The two are computed by completely different engines — DuckDB
+## executes SQL over an in-memory table, Arrow records column statistics at write
+## time — so making them agree on the SAME data is a strong cross-engine guard:
+## a regression in either the helper SQL or the footer-stats reader would diverge.
+##
+## The Arrow footer is the source of truth for the synthetic data; we load the
+## identical rows into an in-memory DuckDB table and prove every helper matches
+## the footer (min/max) or a hand-computed expectation (sum/avg/count).
+##
+## Self-contained: Arrow → parquet → stats (footer) + in-mem DuckDB table →
+## aggregate helpers. No service (DuckDB is embedded). Uses only released ops
+## (Arrow write/stats v0.19.0, DuckDB query/insert/count/sum_/avg_/min_/max_/
+## group_count/query_col/table_exists v0.19.0).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-aggcmp-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/metrics.parquet"
+
+# 30 rows across 3 groups; value runs 0,10,…,290 so min=0, max=290.
+val @groups = ("a", "b", "c")
+var @rows
+for (var $i = 0; $i < 30; $i++) {
+    push @rows, { id => $i, grp => $groups[$i % 3], value => $i * 10 }
+}
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the metrics parquet"
+
+# ── Arrow footer stats: the source-of-truth min/max for `value` ──────
+val $st = Arrow::stats($src)
+assert_eq $st->{num_rows}, 30, "Arrow::stats: footer reports 30 rows"
+val $value_stat = (grep { $_->{name} eq "value" } @{ $st->{columns} })[0]
+assert_ok defined $value_stat, "Arrow::stats exposes a `value` column entry"
+assert_eq $value_stat->{min}, 0,   "Arrow footer: value min = 0"
+assert_eq $value_stat->{max}, 290, "Arrow footer: value max = 290"
+
+# ── Load the identical rows into an in-memory DuckDB table ────────────
+DuckDB::query("CREATE TABLE metrics (id INT, grp VARCHAR, value INT)")
+for val $r (@rows) {
+    DuckDB::query("INSERT INTO metrics VALUES ($r->{id}, '$r->{grp}', $r->{value})")
+}
+assert_ok DuckDB::table_exists("metrics"), "DuckDB::table_exists sees the seeded table"
+assert_ok !DuckDB::table_exists("not_a_table"), "DuckDB::table_exists is false for a missing table"
+
+# count: helper row total must equal the Arrow footer row count.
+assert_eq DuckDB::count("metrics"), 30, "DuckDB::count matches the Arrow footer row count"
+# count with a predicate: ids 0..9 → 10 rows.
+assert_eq DuckDB::count("metrics", "id < 10"), 10, "DuckDB::count with a WHERE clause"
+
+# min_/max_ must agree with the Arrow footer's recorded statistics.
+assert_eq DuckDB::min_("metrics", "value"), $value_stat->{min},
+    "DuckDB::min_ agrees with the Arrow footer min (both 0)"
+assert_eq DuckDB::max_("metrics", "value"), $value_stat->{max},
+    "DuckDB::max_ agrees with the Arrow footer max (both 290)"
+
+# sum_/avg_ against hand-computed expectations: sum 0+10+…+290 = 4350, avg = 145.
+assert_eq DuckDB::sum_("metrics", "value"), 4350, "DuckDB::sum_ over value = 4350"
+assert_eq DuckDB::avg_("metrics", "value"), 145,  "DuckDB::avg_ over value = 145 (4350/30)"
+
+# group_count: 30 rows over 3 groups → 10 each.
+var @gc = DuckDB::group_count("metrics", "grp")
+assert_eq scalar(@gc), 3, "DuckDB::group_count returns one row per group"
+var %by_grp
+for val $g (@gc) { $by_grp{$g->{value}} = $g->{n} }
+assert_eq $by_grp{a}, 10, "group_count: group a has 10 rows"
+assert_eq $by_grp{b}, 10, "group_count: group b has 10 rows"
+assert_eq $by_grp{c}, 10, "group_count: group c has 10 rows"
+
+# query_col: the first-column projection helper returns a flat value list.
+var @ids = DuckDB::query_col("SELECT id FROM metrics ORDER BY id")
+assert_eq scalar(@ids), 30, "query_col returned all 30 ids"
+assert_eq $ids[0],  0,  "query_col: first id is 0"
+assert_eq $ids[-1], 29, "query_col: last id is 29"
+
+# cleanup
+unlink $src if -e $src
+rmdir $dir if -d $dir
+
+test_run

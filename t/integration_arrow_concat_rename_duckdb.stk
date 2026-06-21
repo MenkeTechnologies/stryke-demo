@@ -1,0 +1,81 @@
+## t/integration_arrow_concat_rename_duckdb.stk — Arrow vertical-concat ↔ rename ↔ DuckDB.
+##
+## Exercises two file→file Arrow transforms not covered elsewhere:
+##   * Arrow::concat (stack several files' rows into one — the row-wise
+##     counterpart of hstack), and
+##   * Arrow::rename (rename a column without touching its data).
+##
+## Three single-region parquet files are written separately, concat glues them
+## into one stacked file, then rename re-labels a column. We confirm the result
+## at the file level (Arrow::read row count + Arrow::column_names sees the new
+## label, not the old one) and let DuckDB read the renamed parquet directly to
+## prove the stacked rows and the renamed column survive into a SQL engine
+## intact — a regression in concat's row accounting or rename's schema rewrite
+## would diverge across the two independent readers.
+##
+## Self-contained: Arrow → three parquet files → concat → rename → read +
+## column_names → DuckDB scan. No service. Uses only released ops
+## (Arrow write/concat/rename/read/column_names v0.19.0, DuckDB query v0.19.0).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-concat-rename-$$"
+mkdir $dir unless -d $dir
+
+# Same schema, split across three single-region files (2 + 2 + 1 = 5 rows).
+val $east = "$dir/east.parquet"
+val $west = "$dir/west.parquet"
+val $north = "$dir/north.parquet"
+Arrow::write($east,  [ { id => 1, region => "east", amount => 10 }, { id => 2, region => "east", amount => 20 } ])
+Arrow::write($west,  [ { id => 3, region => "west", amount => 30 }, { id => 4, region => "west", amount => 40 } ])
+Arrow::write($north, [ { id => 5, region => "north", amount => 50 } ])
+assert_ok -e $east && -e $west && -e $north, "Arrow::write produced all three region files"
+
+# concat stacks every file's rows into one, in argument order.
+val $stacked = "$dir/stacked.parquet"
+val $cc = Arrow::concat([$east, $west, $north], $stacked)
+assert_eq $cc->{rows}, 5,    "concat: row count is the sum of the three inputs"
+assert_eq $cc->{sources}, 3, "concat: reports the three source files"
+
+# rename `amount` → `revenue`; the data is untouched, only the label changes.
+val $renamed = "$dir/renamed.parquet"
+val $rn = Arrow::rename($stacked, $renamed, { amount => "revenue" })
+assert_eq $rn->{rows}, 5, "rename: every stacked row preserved"
+
+# File-level: the new label is present, the old one is gone (rename surfaces the
+# renamed column first; the other columns follow).
+val @cols = @{ Arrow::column_names($renamed) }
+val %has_col = map { $_ => 1 } @cols
+assert_ok $has_col{revenue}, "rename: the new `revenue` label is present"
+assert_ok !$has_col{amount}, "rename: the old `amount` label is gone"
+assert_eq join(",", sort @cols), "id,region,revenue", "rename: column set is exactly {id, region, revenue}"
+
+# Row order is the concat order: east rows, then west, then north.
+val @back = Arrow::read($renamed)
+assert_eq scalar(@back), 5, "rename: all five rows readable after the rename"
+assert_eq join(",", map { $_->{id} } @back), "1,2,3,4,5", "concat preserved per-file row order, files in argument order"
+assert_eq $back[0]->{revenue}, 10, "row 0 revenue (renamed amount) survived"
+assert_eq $back[4]->{region},  "north", "last row is the single north row"
+
+# DuckDB reads the renamed parquet directly and confirms the stack row-for-row.
+var @rows = DuckDB::query("SELECT region, COUNT(*) AS n, SUM(revenue) AS total FROM parquet_scan('$renamed') GROUP BY region ORDER BY region")
+assert_eq scalar(@rows), 3, "DuckDB: three regions in the stacked file"
+var %by_region
+for val $r (@rows) { $by_region{$r->{region}} = $r }
+assert_eq $by_region{east}->{n},  2,  "DuckDB: east kept its two rows through concat"
+assert_eq $by_region{west}->{n},  2,  "DuckDB: west kept its two rows"
+assert_eq $by_region{north}->{n}, 1,  "DuckDB: north kept its single row"
+assert_eq $by_region{east}->{total}, 30, "DuckDB sums the renamed `revenue` column (east 10+20)"
+
+# Grand total across the renamed column must equal the input sum (10+20+30+40+50).
+val $grand = DuckDB::query_scalar("SELECT SUM(revenue) FROM parquet_scan('$renamed')")
+assert_eq $grand, 150, "DuckDB: renamed column sums to the input total (concat + rename lossless)"
+
+# cleanup
+for val $p ($east, $west, $north, $stacked, $renamed) {
+    unlink $p if -e $p
+}
+rmdir $dir if -d $dir
+
+test_run
