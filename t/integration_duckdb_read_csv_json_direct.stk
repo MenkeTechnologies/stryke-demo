@@ -1,0 +1,64 @@
+## t/integration_duckdb_read_csv_json_direct.stk — DuckDB direct CSV/JSON
+## file scans ↔ Arrow writers.
+##
+## DuckDB::read_csv / DuckDB::read_json scan a file in place via DuckDB's
+## native read_csv_auto() / read_json_auto() table functions — no staging
+## table, schema inferred from the file. Arrow writes the CSV (Arrow::CSV)
+## and the JSON (Arrow::write format => json); DuckDB reads them back. This
+## reconciles Arrow's text/JSON WRITERS against DuckDB's auto-detecting
+## READERS over the identical row set: a delimiter, quoting, or JSON-shape
+## regression in either side diverges on count or cell value.
+##
+## Also exercises the limit => N pushdown on read_csv.
+##
+## Self-contained: Arrow writes the files, DuckDB scans them. No service
+## (DuckDB embedded, Arrow in-process).
+
+use Arrow
+use Arrow::CSV
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-readtext-$$"
+mkdir $dir unless -d $dir
+val $csv  = "$dir/data.csv"
+val $json = "$dir/data.json"
+
+# 25 rows; value = i*4 → 0..96, sum = 4*(0..24) = 1200.
+var @rows
+for (var $i = 0; $i < 25; $i++) {
+    push @rows, { id => $i, value => $i * 4 }
+}
+
+# ── CSV: Arrow writes, DuckDB read_csv scans ─────────────────────────────
+Arrow::CSV::write($csv, \@rows)
+assert_ok -e $csv, "Arrow::CSV::write produced the csv"
+
+var @rc = DuckDB::read_csv($csv)
+assert_eq scalar(@rc), 25, "DuckDB::read_csv recovered all 25 rows"
+var @rc_sorted = sort { $a->{id} <=> $b->{id} } @rc
+assert_eq $rc_sorted[0]{value},  0,  "read_csv: id 0 → value 0"
+assert_eq $rc_sorted[-1]{value}, 96, "read_csv: id 24 → value 96"
+var $csv_sum = 0
+$csv_sum += $_->{value} for @rc
+assert_eq $csv_sum, 1200, "read_csv preserved every value (sum = 1200)"
+
+# limit pushdown.
+var @rc_lim = DuckDB::read_csv($csv, limit => 6)
+assert_eq scalar(@rc_lim), 6, "read_csv limit => 6 capped the scan to 6 rows"
+
+# ── JSON: Arrow writes, DuckDB read_json scans ───────────────────────────
+Arrow::write($json, \@rows, format => "json")
+assert_ok -e $json, "Arrow::write json produced the json file"
+
+var @rj = DuckDB::read_json($json)
+assert_eq scalar(@rj), 25, "DuckDB::read_json recovered all 25 rows"
+var $json_sum = 0
+$json_sum += $_->{value} for @rj
+assert_eq $json_sum, $csv_sum,
+    "read_json and read_csv agree on the total (both 1200) over the same data"
+
+# cleanup
+unlink $_ for ($csv, $json)
+rmdir $dir if -d $dir
+
+test_run

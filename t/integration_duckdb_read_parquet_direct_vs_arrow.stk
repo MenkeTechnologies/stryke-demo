@@ -1,0 +1,60 @@
+## t/integration_duckdb_read_parquet_direct_vs_arrow.stk — DuckDB direct
+## parquet scan ↔ Arrow::read.
+##
+## DuckDB::read_parquet scans a parquet file in place via DuckDB's native
+## read_parquet() table function — no CREATE TABLE, no copy. Arrow::read
+## decodes the same file through the Arrow parquet reader. Two independent
+## parquet readers over one file must agree on row count, column projection,
+## and cell values; a regression in either reader (column pruning, predicate
+## pushdown, type coercion) shows up as a divergence here.
+##
+## Also exercises the opts path: columns => "..." (projection pushdown) and
+## limit => N (row cap), which DuckDB pushes into the scan.
+##
+## Self-contained: Arrow writes the parquet, both engines read it back. No
+## service (DuckDB embedded, Arrow in-process).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-readpq-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/events.parquet"
+
+# 50 rows; value = i*2 → 0..98.
+var @rows
+for (var $i = 0; $i < 50; $i++) {
+    push @rows, { id => $i, kind => ($i % 2 == 0 ? "even" : "odd"), value => $i * 2 }
+}
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the events parquet"
+
+# Arrow read is the reference.
+var @aref = Arrow::read($src)
+assert_eq scalar(@aref), 50, "Arrow::read recovered all 50 rows"
+
+# DuckDB direct scan — full table.
+var @full = DuckDB::read_parquet($src)
+assert_eq scalar(@full), scalar(@aref),
+    "DuckDB::read_parquet row count matches Arrow::read (both 50)"
+# Order is preserved by the parquet row order; compare endpoints.
+var @full_sorted = sort { $a->{id} <=> $b->{id} } @full
+assert_eq $full_sorted[0]{value},  0,  "read_parquet: id 0 → value 0"
+assert_eq $full_sorted[-1]{value}, 98, "read_parquet: id 49 → value 98"
+
+# Column projection pushdown: only id + value come back.
+var @proj = DuckDB::read_parquet($src, columns => "id, value")
+assert_eq scalar(@proj), 50, "read_parquet with projection still returns 50 rows"
+var @pkeys = sort keys %{ $proj[0] }
+assert_eq scalar(@pkeys), 2, "projection cut the row to exactly 2 columns"
+assert_eq join(",", @pkeys), "id,value", "projection kept id + value, dropped kind"
+
+# Row-cap pushdown.
+var @capped = DuckDB::read_parquet($src, limit => 7)
+assert_eq scalar(@capped), 7, "read_parquet limit => 7 capped the scan to 7 rows"
+
+# cleanup
+unlink $src if -e $src
+rmdir $dir if -d $dir
+
+test_run

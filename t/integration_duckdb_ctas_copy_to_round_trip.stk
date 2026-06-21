@@ -1,0 +1,56 @@
+## t/integration_duckdb_ctas_copy_to_round_trip.stk — DuckDB CTAS + COPY TO
+## parquet ↔ Arrow read-back.
+##
+## DuckDB::create_table_as (CTAS) materialises a query into a new table;
+## DuckDB::copy_to streams an arbitrary query out to a parquet file via
+## DuckDB's COPY … (FORMAT parquet). The exported parquet is then read back
+## by Arrow::read — proving DuckDB's parquet WRITER and Arrow's parquet
+## READER agree on the round-trip (the reverse direction of the read_parquet
+## test, where Arrow writes and DuckDB reads). A schema or encoding mismatch
+## in DuckDB's COPY writer would surface as garbled cells or a wrong count.
+##
+## Self-contained: DuckDB builds the data in-memory, exports to parquet,
+## Arrow reads it back. No service (DuckDB embedded, Arrow in-process).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-ctas-$$"
+mkdir $dir unless -d $dir
+val $out = "$dir/exported.parquet"
+
+# Seed a base table: 30 rows, value = i*10 → 0..290.
+DuckDB::query("CREATE OR REPLACE TABLE base (id INT, value INT)")
+DuckDB::insert_many("base",
+    [ map { { id => $_, value => $_ * 10 } } (0 .. 29) ])
+assert_eq DuckDB::count("base"), 30, "insert_many seeded 30 base rows"
+
+# CTAS: materialise the high-value subset (value >= 150 → ids 15..29 → 15 rows).
+DuckDB::create_table_as("high", "SELECT * FROM base WHERE value >= 150", replace => 1)
+assert_ok DuckDB::table_exists("high"), "create_table_as created the `high` table"
+assert_eq DuckDB::count("high"), 15, "CTAS subset has 15 rows (value >= 150)"
+assert_eq DuckDB::min_("high", "value"), 150, "CTAS kept only value >= 150"
+assert_eq DuckDB::max_("high", "value"), 290, "CTAS preserved the table maximum"
+
+# COPY TO parquet, then read back through Arrow.
+DuckDB::copy_to("SELECT * FROM high ORDER BY id", $out)
+assert_ok -e $out, "DuckDB::copy_to produced the parquet export"
+
+var @back = Arrow::read($out)
+assert_eq scalar(@back), 15, "Arrow::read recovered all 15 exported rows"
+var @sorted = sort { $a->{id} <=> $b->{id} } @back
+assert_eq $sorted[0]{id},     15,  "exported parquet: first id is 15"
+assert_eq $sorted[0]{value},  150, "exported parquet: first value is 150"
+assert_eq $sorted[-1]{id},    29,  "exported parquet: last id is 29"
+assert_eq $sorted[-1]{value}, 290, "exported parquet: last value is 290"
+
+# Cross-check the readback against DuckDB's own count of the export.
+var @reread = DuckDB::read_parquet($out)
+assert_eq scalar(@reread), scalar(@back),
+    "DuckDB and Arrow agree on the exported parquet row count"
+
+# cleanup
+unlink $out if -e $out
+rmdir $dir if -d $dir
+
+test_run

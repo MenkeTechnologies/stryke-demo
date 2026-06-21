@@ -1,0 +1,75 @@
+## t/integration_duckdb_distinct_aggregate_vs_arrow.stk — DuckDB::distinct +
+## DuckDB::aggregate (median/stddev/…) ↔ hand-computed + Arrow footer.
+##
+## DuckDB::aggregate is the generic scalar-aggregate helper: it runs
+## $fn($column) for any validated aggregate identifier (count/sum/avg/min/
+## max/median/stddev_pop/…), going beyond the fixed sum_/avg_/min_/max_
+## convenience wrappers already covered elsewhere. DuckDB::distinct returns
+## the unique values of a column. Both are cross-checked against values the
+## Arrow footer or a hand computation pins exactly, so a SQL-generation or
+## aggregate-dispatch regression diverges.
+##
+## distinct/query_col currently leak Arrow ListArray debug text for VARCHAR
+## columns in the installed connector, so this test exercises distinct on a
+## numeric column only (where it returns clean scalars).
+##
+## Self-contained: Arrow → parquet → footer stats + in-mem DuckDB table.
+## No service (DuckDB embedded, Arrow in-process).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-distagg-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/scores.parquet"
+
+# 21 rows; bucket = i % 5 → {0,1,2,3,4}; value = i (0..20).
+# sum 0..20 = 210, avg = 10, median = 10, min 0, max 20.
+var @rows
+for (var $i = 0; $i < 21; $i++) {
+    push @rows, { id => $i, bucket => $i % 5, value => $i }
+}
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the scores parquet"
+
+val $st = Arrow::stats($src)
+val $vstat = (grep { $_->{name} eq "value" } @{ $st->{columns} })[0]
+assert_eq $vstat->{min}, 0,  "Arrow footer: value min = 0"
+assert_eq $vstat->{max}, 20, "Arrow footer: value max = 20"
+
+DuckDB::create_table_as("scores", "SELECT * FROM read_parquet('$src')", replace => 1)
+assert_eq DuckDB::count("scores"), 21, "DuckDB loaded all 21 rows"
+
+# ── DuckDB::distinct on the numeric bucket column: exactly {0,1,2,3,4} ───
+var @buckets = DuckDB::distinct("scores", "bucket")
+var @bsorted = sort { $a <=> $b } @buckets
+assert_eq scalar(@bsorted), 5, "distinct bucket → 5 unique values"
+assert_eq join(",", @bsorted), "0,1,2,3,4", "distinct bucket values are 0..4"
+
+# ── DuckDB::aggregate: generic dispatch beyond the fixed helpers ─────────
+# min/max must agree with the Arrow footer.
+assert_eq DuckDB::aggregate("scores", "value", "min"), $vstat->{min},
+    "aggregate(min) agrees with the Arrow footer (0)"
+assert_eq DuckDB::aggregate("scores", "value", "max"), $vstat->{max},
+    "aggregate(max) agrees with the Arrow footer (20)"
+# sum/avg/median against hand-computed expectations.
+assert_eq DuckDB::aggregate("scores", "value", "sum"), 210,
+    "aggregate(sum) over 0..20 = 210"
+assert_eq DuckDB::aggregate("scores", "value", "avg"), 10,
+    "aggregate(avg) over 0..20 = 10"
+assert_eq DuckDB::aggregate("scores", "value", "median"), 10,
+    "aggregate(median) over 0..20 = 10"
+# count_distinct on bucket must equal the distinct() length.
+assert_eq DuckDB::aggregate("scores", "bucket", "count"), 21,
+    "aggregate(count) counts every non-null bucket cell"
+
+# ── aggregate with a WHERE clause: sum of value for value >= 11 ──────────
+# 11+12+…+20 = 155.
+assert_eq DuckDB::aggregate("scores", "value", "sum", "value >= 11"), 155,
+    "aggregate(sum) with a WHERE predicate = 155"
+
+# cleanup
+unlink $src if -e $src
+rmdir $dir if -d $dir
+
+test_run

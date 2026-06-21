@@ -1,0 +1,53 @@
+## t/integration_duckdb_sample_insert_many.stk — DuckDB::insert_many bulk
+## load + DuckDB::sample reservoir sampling.
+##
+## DuckDB::insert_many batches an array of row-hashes into one table in a
+## single helper call (vs hand-writing N INSERT statements). DuckDB::sample
+## draws a random reservoir of N rows via USING SAMPLE. The pair is verified
+## structurally: insert_many must land every row (count + aggregate match a
+## hand computation), and sample must return min(N, table_size) rows whose
+## every value is drawn from the seeded set — a sampler that returned rows
+## outside the table, or a bulk insert that dropped rows, fails here.
+##
+## Sampling is random, so the test asserts on cardinality and set-membership
+## invariants, never on a specific drawn subset.
+##
+## Self-contained: in-mem DuckDB only. No service, no second engine.
+
+use DuckDB
+
+DuckDB::query("CREATE OR REPLACE TABLE points (id INT, value INT)")
+
+# Bulk load 60 rows in one call; value = i*3 → 0..177, sum = 3*(0..59) = 5310.
+var @seed
+for (var $i = 0; $i < 60; $i++) {
+    push @seed, { id => $i, value => $i * 3 }
+}
+DuckDB::insert_many("points", \@seed)
+assert_eq DuckDB::count("points"), 60, "insert_many landed all 60 rows in one call"
+assert_eq DuckDB::sum_("points", "value"), 5310,
+    "insert_many preserved every value (sum 0,3,…,177 = 5310)"
+assert_eq DuckDB::min_("points", "value"), 0,   "insert_many: min value = 0"
+assert_eq DuckDB::max_("points", "value"), 177, "insert_many: max value = 177"
+
+# Build the set of legal values for membership checks below.
+var %legal
+for val $r (@seed) { $legal{$r->{value}} = 1 }
+
+# ── sample fewer than the table size: exactly N rows, all from the set ───
+var @s10 = DuckDB::sample("points", 10)
+assert_eq scalar(@s10), 10, "sample(10) returned exactly 10 rows"
+var $all_legal = 1
+for val $r (@s10) { $all_legal = 0 unless $legal{$r->{value}} }
+assert_ok $all_legal, "every sampled value is one of the seeded values"
+
+# ── sample N >= table size: capped at the table size (no duplication) ────
+var @s_all = DuckDB::sample("points", 1000)
+assert_ok scalar(@s_all) <= 60,
+    "sample(1000) cannot exceed the 60-row table (got " . scalar(@s_all) . ")"
+assert_ok scalar(@s_all) > 0, "sample(1000) returned a non-empty draw"
+
+# cleanup
+DuckDB::execute("DROP TABLE IF EXISTS points")
+
+test_run

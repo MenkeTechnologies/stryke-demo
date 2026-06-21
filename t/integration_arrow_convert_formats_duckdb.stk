@@ -1,0 +1,72 @@
+## t/integration_arrow_convert_formats_duckdb.stk — Arrow::convert
+## cross-format transcoding ↔ DuckDB direct scans.
+##
+## Arrow::convert($src, $dst) reads one file and rewrites it in a (possibly
+## different) format, file→file via Arrow's readers/writers — the generic
+## transcoder behind the format-specific helpers. This test runs a full
+## format chain: parquet → CSV → parquet → JSON, then has DuckDB's native
+## auto-readers (read_parquet / read_csv / read_json) scan each artifact.
+## Every hop must preserve row count and column values; a regression in
+## Arrow's transcoder (format inference from extension, schema carry-over,
+## numeric coercion) is caught because a SECOND engine re-reads each stage.
+##
+## Self-contained: Arrow writes the seed parquet and does every conversion;
+## DuckDB validates each artifact. No service (both in-process / embedded).
+
+use Arrow
+use Arrow::CSV
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-convert-$$"
+mkdir $dir unless -d $dir
+val $pq   = "$dir/seed.parquet"
+val $csv  = "$dir/stage.csv"
+val $pq2  = "$dir/stage.parquet"
+val $json = "$dir/stage.json"
+
+# 32 rows; value = i*7 → 0..217, sum = 7*(0..31) = 3472.
+var @rows
+for (var $i = 0; $i < 32; $i++) {
+    push @rows, { id => $i, value => $i * 7 }
+}
+Arrow::write($pq, \@rows)
+assert_ok -e $pq, "Arrow::write produced the seed parquet"
+val $want_sum = 3472
+
+# Reference: DuckDB scans the seed parquet directly.
+assert_eq scalar(@{[ DuckDB::read_parquet($pq) ]}), 32,
+    "DuckDB::read_parquet sees all 32 seed rows"
+
+# ── hop 1: parquet → CSV (format inferred from the .csv extension) ───────
+Arrow::convert($pq, $csv)
+assert_ok -e $csv, "Arrow::convert parquet → csv produced the file"
+var @c = DuckDB::read_csv($csv)
+assert_eq scalar(@c), 32, "DuckDB::read_csv: 32 rows survived parquet → csv"
+var $csv_sum = 0
+$csv_sum += $_->{value} for @c
+assert_eq $csv_sum, $want_sum, "parquet → csv preserved every value (sum 3472)"
+
+# ── hop 2: CSV → parquet (explicit formats) ─────────────────────────────
+Arrow::convert($csv, $pq2, src_format => "csv", dst_format => "parquet")
+assert_ok -e $pq2, "Arrow::convert csv → parquet produced the file"
+var @p2 = DuckDB::read_parquet($pq2)
+assert_eq scalar(@p2), 32, "DuckDB::read_parquet: 32 rows survived csv → parquet"
+var @p2_sorted = sort { $a->{id} <=> $b->{id} } @p2
+assert_eq $p2_sorted[0]{value},  0,   "csv → parquet: id 0 → value 0"
+assert_eq $p2_sorted[-1]{value}, 217, "csv → parquet: id 31 → value 217"
+
+# ── hop 3: parquet → JSON ────────────────────────────────────────────────
+Arrow::convert($pq, $json)
+assert_ok -e $json, "Arrow::convert parquet → json produced the file"
+var @j = DuckDB::read_json($json)
+assert_eq scalar(@j), 32, "DuckDB::read_json: 32 rows survived parquet → json"
+var $json_sum = 0
+$json_sum += $_->{value} for @j
+assert_eq $json_sum, $want_sum,
+    "every hop agrees on the total: parquet, csv, and json all sum to 3472"
+
+# cleanup
+unlink $_ for ($pq, $csv, $pq2, $json)
+rmdir $dir if -d $dir
+
+test_run

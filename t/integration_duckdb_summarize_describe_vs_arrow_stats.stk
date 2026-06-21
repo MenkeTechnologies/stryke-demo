@@ -1,0 +1,70 @@
+## t/integration_duckdb_summarize_describe_vs_arrow_stats.stk — DuckDB
+## SUMMARIZE / DESCRIBE ↔ Arrow footer stats.
+##
+## DuckDB::summarize runs SUMMARIZE over an in-memory table, producing one
+## stats row per column (count/min/max/avg/std/…). Arrow records per-column
+## min/max into the parquet footer, surfaced by Arrow::stats. The two are
+## computed by completely different engines — DuckDB scans the table and
+## aggregates; Arrow records statistics at write time — so making them agree
+## on the SAME data is a cross-engine guard. DuckDB::describe is checked
+## against Arrow's declared column set so a schema-shape regression in either
+## reader diverges loudly.
+##
+## Self-contained: Arrow → parquet → footer stats + in-mem DuckDB table
+## (loaded via read_parquet) → SUMMARIZE/DESCRIBE. No service (DuckDB is
+## embedded; Arrow is in-process).
+
+use Arrow
+use DuckDB
+
+val $dir = "/tmp/stryke-demo-summarize-$$"
+mkdir $dir unless -d $dir
+val $src = "$dir/metrics.parquet"
+
+# 40 rows; value = i*5 → min 0, max 195. grp cycles a/b/c/d.
+val @groups = ("a", "b", "c", "d")
+var @rows
+for (var $i = 0; $i < 40; $i++) {
+    push @rows, { id => $i, grp => $groups[$i % 4], value => $i * 5 }
+}
+Arrow::write($src, \@rows)
+assert_ok -e $src, "Arrow::write produced the metrics parquet"
+
+# ── Arrow footer stats: source-of-truth min/max for `value` ──────────
+val $st = Arrow::stats($src)
+assert_eq $st->{num_rows}, 40, "Arrow::stats: footer reports 40 rows"
+val $value_stat = (grep { $_->{name} eq "value" } @{ $st->{columns} })[0]
+assert_ok defined $value_stat, "Arrow::stats exposes a `value` column entry"
+assert_eq $value_stat->{min}, 0,   "Arrow footer: value min = 0"
+assert_eq $value_stat->{max}, 195, "Arrow footer: value max = 195"
+
+# ── Load the identical rows into an in-mem DuckDB table via read_parquet ─
+DuckDB::create_table_as("metrics", "SELECT * FROM read_parquet('$src')", replace => 1)
+assert_ok DuckDB::table_exists("metrics"), "create_table_as seeded the table from parquet"
+assert_eq DuckDB::count("metrics"), 40, "DuckDB row count matches the Arrow footer"
+
+# ── DuckDB::summarize: one stats row per column, value min/max must match ─
+var @sm = DuckDB::summarize("metrics")
+assert_eq scalar(@sm), 3, "SUMMARIZE returns one row per column (id, grp, value)"
+val $vsum = (grep { $_->{column_name} eq "value" } @sm)[0]
+assert_ok defined $vsum, "SUMMARIZE has a row for the `value` column"
+assert_eq $vsum->{min} + 0, $value_stat->{min},
+    "SUMMARIZE value min agrees with the Arrow footer (both 0)"
+assert_eq $vsum->{max} + 0, $value_stat->{max},
+    "SUMMARIZE value max agrees with the Arrow footer (both 195)"
+assert_eq $vsum->{count} + 0, 40, "SUMMARIZE value count = 40"
+
+# ── DuckDB::describe: declared columns must equal the Arrow column set ───
+var @d = DuckDB::describe("metrics")
+assert_eq scalar(@d), 3, "DESCRIBE returns one row per column"
+var %declared
+for val $r (@d) { $declared{$r->{column_name}} = 1 }
+for val $c (qw(id grp value)) {
+    assert_ok $declared{$c}, "DESCRIBE lists the `$c` column"
+}
+
+# cleanup
+unlink $src if -e $src
+rmdir $dir if -d $dir
+
+test_run
