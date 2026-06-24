@@ -21,6 +21,8 @@ pulls all fourteen from GitHub; each demo is a standalone `.stk` script.
 
 ### [`strykelang`](https://github.com/MenkeTechnologies/strykelang) &middot; [`MenkeTechnologiesMeta`](https://github.com/MenkeTechnologies/MenkeTechnologiesMeta) · [`stryke-arrow`](https://github.com/MenkeTechnologies/stryke-arrow) · [`stryke-aws`](https://github.com/MenkeTechnologies/stryke-aws) · [`stryke-docker`](https://github.com/MenkeTechnologies/stryke-docker) · [`stryke-kafka`](https://github.com/MenkeTechnologies/stryke-kafka)
 
+### [`Read the Docs`](https://menketechnologies.github.io/stryke-demo/) &middot; [`Engineering Report`](https://menketechnologies.github.io/stryke-demo/report.html)
+
 ---
 
 ## Table of Contents
