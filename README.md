@@ -130,7 +130,7 @@ stryke-demo/
     02_mysql.stk             # CREATE / INSERT / SELECT round-trip
     03_postgres.stk          # CREATE / INSERT / SELECT round-trip
     04_spark.stk             # SparkSQL via embedded DataFusion session
-    05_aws.stk               # S3 + DynamoDB + STS via LocalStack
+    05_aws.stk               # S3 + DynamoDB + SQS + STS via LocalStack
     06_gcp.stk               # GCS put/get/list + Pub/Sub pump
     07_kafka.stk             # create-topic + produce + consume + describe + delete
     08_grpc.stk              # list services + describe via reflection
