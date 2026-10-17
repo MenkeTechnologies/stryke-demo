@@ -141,13 +141,7 @@ stryke-demo/
     13_k8s.stk               # discovery + apply + scale + get + cleanup
     14_docker.stk            # pull + run + inspect + exec + logs + cleanup
     run_all.stk              # ping each service, run only the reachable demos
-  t/                         # cross-package integration tests (arrow compute,
-                             #   parquet footer diagnostics, arrow dedupe ↔ null
-                             #   rollup, arrow cast ↔ duckdb types, arrow IN/NOT IN
-                             #   ↔ parquet drop ↔ duckdb LIKE, arrow concat/rename
-                             #   ↔ duckdb, arrow slice/tail/select/drop ↔ duckdb,
-                             #   duckdb aggregate helpers ↔ arrow footer stats,
-                             #   arrow↔duckdb, polars)
+  t/                         # cross-package integration tests
 ```
 
 ## [0x06] Updating dep pins
